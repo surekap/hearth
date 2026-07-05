@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { desc, eq, and } from "drizzle-orm";
-import { FileText, FlaskConical, Pill, Stethoscope, Upload } from "lucide-react";
+import { Dna, FileText, FlaskConical, Pill, Stethoscope, Upload } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/active-profile";
 import { db, schema } from "@/db";
@@ -12,7 +12,7 @@ import { EmptyState } from "@/components/ui/mascot";
 
 type TimelineEvent = {
   date: Date;
-  kind: "document" | "labs" | "report" | "manual" | "med";
+  kind: "document" | "labs" | "report" | "manual" | "med" | "genetics";
   title: string;
   detail: string;
   href: string;
@@ -25,6 +25,7 @@ const TYPE_LABELS: Record<string, string> = {
   imaging: "Imaging report",
   specialist_report: "Specialist report",
   discharge_summary: "Discharge summary",
+  genetic_report: "Genetic report",
   invoice: "Invoice",
   other: "Document",
 };
@@ -35,7 +36,7 @@ export default async function TimelinePage() {
   const { profile } = await getActiveProfile(session.user.id);
   if (!profile) redirect("/profiles");
 
-  const [docs, observations, reports, medEvents] = await Promise.all([
+  const [docs, observations, reports, medEvents, geneticReports] = await Promise.all([
     db.query.documents.findMany({
       where: eq(schema.documents.profileId, profile.id),
       orderBy: [desc(schema.documents.uploadedAt)],
@@ -75,6 +76,11 @@ export default async function TimelinePage() {
       where: eq(schema.medicationEvents.profileId, profile.id),
       orderBy: [desc(schema.medicationEvents.eventTime)],
       limit: 200,
+    }),
+    db.query.geneticReports.findMany({
+      where: eq(schema.geneticReports.profileId, profile.id),
+      orderBy: [desc(schema.geneticReports.createdAt)],
+      limit: 50,
     }),
   ]);
 
@@ -175,6 +181,17 @@ export default async function TimelinePage() {
     });
   }
 
+  for (const g of geneticReports) {
+    events.push({
+      date: g.reportDate ? new Date(g.reportDate) : g.createdAt,
+      kind: "genetics",
+      title: g.reportName ?? "Genetic report confirmed",
+      detail: [g.vendor, g.testKind].filter(Boolean).join(" · "),
+      href: "/genetics",
+      badge: { label: "genetics", tone: "blue" },
+    });
+  }
+
   events.sort((a, b) => b.date.getTime() - a.date.getTime());
 
   // Group by month
@@ -192,6 +209,7 @@ export default async function TimelinePage() {
     report: Stethoscope,
     manual: FlaskConical,
     med: Pill,
+    genetics: Dna,
   } as const;
 
   const TONE = {

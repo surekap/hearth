@@ -11,6 +11,7 @@ import {
   Upload,
   Pill,
   Download,
+  Dna,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,7 @@ const items = [
   { href: "/", label: "Timeline", icon: Clock },
   { href: "/dashboard", label: "Dashboard", icon: Activity },
   { href: "/labs", label: "Labs", icon: FlaskConical },
+  { href: "/genetics", label: "Genetics", icon: Dna },
   { href: "/meds", label: "Meds", icon: Pill },
   { href: "/documents", label: "Documents", icon: FileText },
   { href: "/upload", label: "Upload", icon: Upload },

@@ -31,7 +31,7 @@ export default async function ExportPage() {
       icon: FileText,
       title: "Doctor-friendly PDF",
       description:
-        "Cover summary, abnormal values, medications, lab history and document index — made to hand to a physician.",
+        "Cover summary, abnormal values, medications, genetics notes, lab history and document index — made to hand to a physician.",
       cta: "Download PDF",
       primary: true,
     },
@@ -40,7 +40,7 @@ export default async function ExportPage() {
       icon: FileJson,
       title: "Internal JSON",
       description:
-        "Complete raw export of this profile's confirmed data — observations, reports, medications, document metadata.",
+        "Complete raw export of this profile's confirmed data — observations, reports, medications, genetics, document metadata.",
       cta: "Download JSON",
     },
     {
@@ -48,7 +48,7 @@ export default async function ExportPage() {
       icon: FileJson,
       title: "FHIR bundle",
       description:
-        "FHIR-inspired R4 Bundle (Patient, Observation, DiagnosticReport, DocumentReference, MedicationStatement) for interoperability.",
+        "FHIR-inspired R4 Bundle (Patient, Observation, DiagnosticReport, DocumentReference, MedicationStatement) including genetics observations.",
       cta: "Download FHIR",
     },
   ];

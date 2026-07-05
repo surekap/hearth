@@ -16,6 +16,7 @@ const TYPE_LABELS: Record<string, string> = {
   imaging: "Imaging",
   specialist_report: "Specialist report",
   discharge_summary: "Discharge summary",
+  genetic_report: "Genetic report",
   invoice: "Invoice",
   other: "Other",
 };

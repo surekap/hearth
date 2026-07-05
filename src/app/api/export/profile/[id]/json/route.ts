@@ -32,6 +32,12 @@ export async function GET(
         clinicalReports: bundle.reports,
         medicationEvents: bundle.medEvents,
         recentMedications: bundle.recentMeds,
+        genetics: {
+          reports: bundle.geneticReports,
+          variants: bundle.geneticVariants,
+          risks: bundle.geneticRisks,
+          pharmacogenomics: bundle.pharmacogenomics,
+        },
       },
       {
         headers: {

@@ -17,6 +17,10 @@ export async function loadProfileBundle(profileId: string) {
     healthImports,
     healthEvents,
     healthRollups,
+    geneticReports,
+    geneticVariants,
+    geneticRisks,
+    pharmacogenomics,
   ] = await Promise.all([
     db
       .select({
@@ -86,6 +90,22 @@ export async function loadProfileBundle(profileId: string) {
       )
       .where(eq(schema.healthRollups.profileId, profileId))
       .orderBy(desc(schema.healthRollups.periodStart)),
+    db.query.geneticReports.findMany({
+      where: eq(schema.geneticReports.profileId, profileId),
+      orderBy: [desc(schema.geneticReports.reportDate)],
+    }),
+    db.query.geneticVariants.findMany({
+      where: eq(schema.geneticVariants.profileId, profileId),
+      orderBy: [desc(schema.geneticVariants.createdAt)],
+    }),
+    db.query.geneticRiskAssessments.findMany({
+      where: eq(schema.geneticRiskAssessments.profileId, profileId),
+      orderBy: [desc(schema.geneticRiskAssessments.createdAt)],
+    }),
+    db.query.pharmacogenomicResults.findMany({
+      where: eq(schema.pharmacogenomicResults.profileId, profileId),
+      orderBy: [desc(schema.pharmacogenomicResults.createdAt)],
+    }),
   ]);
 
   // Exports only include confirmed clinical data.
@@ -100,6 +120,10 @@ export async function loadProfileBundle(profileId: string) {
     healthImports,
     healthEvents,
     healthRollups,
+    geneticReports,
+    geneticVariants,
+    geneticRisks,
+    pharmacogenomics,
   };
 }
 

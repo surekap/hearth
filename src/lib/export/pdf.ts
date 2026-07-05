@@ -141,7 +141,7 @@ export async function buildDoctorPdf(bundle: ProfileBundle): Promise<Uint8Array>
     { size: 12, color: MUTED }
   );
   text(
-    `Generated ${fmtDate(new Date())} · ${bundle.observations.length} confirmed lab values · ${bundle.documents.length} documents`,
+    `Generated ${fmtDate(new Date())} · ${bundle.observations.length} confirmed lab values · ${bundle.documents.length} documents · ${bundle.geneticReports.length} genetic reports`,
     { size: 9, color: MUTED }
   );
   text(
@@ -261,6 +261,45 @@ export async function buildDoctorPdf(bundle: ProfileBundle): Promise<Uint8Array>
         ],
         [0, 90, 180]
       );
+    }
+  }
+
+  if (bundle.geneticReports.length > 0) {
+    heading("Genetic and pharmacogenomic notes");
+    text(
+      "Genetic findings are static risk context, not diagnoses or medication orders. Re-check older reports against current guidance before clinical decisions.",
+      { size: 8, color: MUTED }
+    );
+    if (bundle.pharmacogenomics.length > 0) {
+      cols([{ t: "Medication response", font: bold }], [0], 10);
+      for (const p of bundle.pharmacogenomics.slice(0, 12)) {
+        cols(
+          [
+            p.drugName,
+            [p.gene, p.genotype, p.phenotype].filter(Boolean).join(" / ") || "—",
+            p.implication,
+          ],
+          [0, 130, 270]
+        );
+      }
+    }
+    const notableRisks = bundle.geneticRisks.filter(
+      (r) => r.riskLevel === "high" || r.riskLevel === "medium"
+    );
+    if (notableRisks.length > 0) {
+      gap(5);
+      cols([{ t: "Risk context", font: bold }], [0], 10);
+      for (const r of notableRisks.slice(0, 12)) {
+        cols(
+          [
+            r.conditionName,
+            r.category,
+            r.assessment ?? r.riskLevel,
+            r.lifetimeRiskPercent != null ? `${r.lifetimeRiskPercent}%` : "—",
+          ],
+          [0, 150, 230, 430]
+        );
+      }
     }
   }
 

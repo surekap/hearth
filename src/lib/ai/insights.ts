@@ -21,7 +21,8 @@ Each insight: a short punchy title and a 1-3 sentence body in your physician voi
 - tone "stern": worsening or repeatedly abnormal values, concerning combinations (e.g. high TG + low HDL + rising ALT). Be direct about why it matters and what kind of follow-up conversation to have with their treating doctor.
 - tone "warning": borderline values or gaps worth watching (e.g. no follow-up test in over a year).
 - tone "neutral": useful context that is neither.
-Prioritize what matters clinically. Never recommend, start, stop or dose any medication. category: one word like liver, lipid, glucose, vitamin, lifestyle.`;
+Genomic results are static risk/medication-response context, not diagnoses or prescriptions. Mention them only when they materially change what the patient should discuss with a clinician.
+Prioritize what matters clinically. Never recommend, start, stop or dose any medication. category: one word like liver, lipid, glucose, vitamin, lifestyle, genetics.`;
 
 const INSIGHTS_JSON_SCHEMA = {
   type: "object",
@@ -53,7 +54,10 @@ async function dataFingerprint(profileId: string): Promise<string> {
       (SELECT coalesce(max(updated_at)::text, '') FROM observations WHERE profile_id = ${profileId} AND status = 'confirmed'), ':',
       (SELECT count(*) FROM medication_events WHERE profile_id = ${profileId}), ':',
       (SELECT count(*) FROM conversation_datapoints WHERE profile_id = ${profileId}), ':',
-      (SELECT count(*) FROM clinical_reports WHERE profile_id = ${profileId})
+      (SELECT count(*) FROM clinical_reports WHERE profile_id = ${profileId}), ':',
+      (SELECT count(*) FROM genetic_reports WHERE profile_id = ${profileId}), ':',
+      (SELECT count(*) FROM genetic_risk_assessments WHERE profile_id = ${profileId}), ':',
+      (SELECT count(*) FROM pharmacogenomic_results WHERE profile_id = ${profileId})
     ) AS fp
   `);
   return (result.rows[0] as { fp: string }).fp;

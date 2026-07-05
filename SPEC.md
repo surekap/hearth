@@ -2,7 +2,7 @@
 
 ## 1. Product thesis
 
-Build a private, family-oriented health record system that starts with **lab report ingestion and medical document storage**, then grows into Apple Health integration and cautious health intelligence.
+Build a private, family-oriented health record system that starts with **lab report ingestion, genetic report context, and medical document storage**, then grows into Apple Health integration and cautious health intelligence.
 
 The first version is **not a doctor replacement**. It is a structured personal health archive with timeline, dashboards, document provenance, and AI-assisted extraction.
 
@@ -41,6 +41,7 @@ Features:
 8. Metabolic/liver dashboard
 9. Basic AI Q&A over selected profile only
 10. JSON + PDF export
+11. Genetics page for confirmed pharmacogenomics, predisposition, traits, and variants
 
 ### Phase 1.5 — iPhone ingestion workaround
 
@@ -133,7 +134,7 @@ This is non-negotiable.
 id
 profile_id
 uploaded_by_user_id
-document_type: lab_report | prescription | imaging | specialist_report | discharge_summary | invoice | other
+document_type: lab_report | prescription | imaging | specialist_report | discharge_summary | genetic_report | invoice | other
 source: apollo | whatsapp | camera | files | manual | unknown
 original_filename
 mime_type
@@ -184,7 +185,7 @@ error
 id
 extraction_job_id
 profile_id
-item_type: lab_observation | medication | diagnosis | procedure | report_summary
+item_type: lab_observation | medication | diagnosis | procedure | report_summary | genetic_variant | genetic_risk | genetic_trait | pharmacogenomic_result
 status: draft | accepted | rejected
 raw_json
 confidence
@@ -447,6 +448,99 @@ last_used_at
 use_count
 ```
 
+### 5.10 Genetics
+
+Genetic reports are static evidence, not time-series lab values. They must stay
+separate from `observations` so a disease predisposition is never mistaken for a
+diagnosis or current measurement.
+
+`genetic_reports`
+
+```text
+id
+profile_id
+document_id
+vendor nullable
+report_name nullable
+report_date nullable
+test_kind: predisposition | pharmacogenomics | carrier | raw_genotype | other
+genome_build nullable
+summary nullable
+created_at
+updated_at
+```
+
+`genetic_variants`
+
+```text
+id
+profile_id
+genetic_report_id
+document_id
+gene nullable
+variant_id nullable
+marker nullable
+chromosome nullable
+position nullable
+genotype nullable
+phenotype nullable
+source_section nullable
+metadata_json nullable
+created_at
+```
+
+`genetic_risk_assessments`
+
+```text
+id
+profile_id
+genetic_report_id
+document_id
+category: disease | trait
+condition_name
+assessment nullable
+risk_level: low | normal | medium | high | unknown
+lifetime_risk_percent nullable
+population_risk_percent nullable
+variant_score nullable
+summary nullable
+metadata_json nullable
+created_at
+```
+
+`pharmacogenomic_results`
+
+```text
+id
+profile_id
+genetic_report_id
+document_id
+drug_name
+gene nullable
+genotype nullable
+phenotype nullable
+implication
+actionability: informational | actionable | high_impact | unknown
+recommendation_summary nullable
+evidence_level nullable
+metadata_json nullable
+created_at
+```
+
+`genetic_reannotations`
+
+```text
+id
+profile_id
+genetic_report_id
+source_name
+source_url nullable
+checked_at
+classification nullable
+notes nullable
+metadata_json nullable
+```
+
 ## 6. Document ingestion flow
 
 ### Upload sources
@@ -489,7 +583,7 @@ File upload
 → draft records
 → review UI
 → user accepts / edits / rejects
-→ confirmed records written to observations / reports / medications
+→ confirmed records written to observations / reports / medications / genetics
 ```
 
 ## 7. LLM extraction design
@@ -564,6 +658,50 @@ The LLM must return strict JSON:
 }
 ```
 
+### Genetic report extraction
+
+```json
+{
+  "document_type": "genetic_report",
+  "report_date": "2013-05-02",
+  "genetic_report": {
+    "vendor": "Mapmygenome",
+    "report_name": "Genomepatri",
+    "test_kind": "predisposition",
+    "genome_build": null,
+    "summary": "Predisposition, trait, and pharmacogenomic report.",
+    "confidence": 0.92
+  },
+  "genetic_risks": [
+    {
+      "category": "disease",
+      "condition_name": "Glaucoma",
+      "assessment": "High risk",
+      "risk_level": "high",
+      "lifetime_risk_percent": 4.683,
+      "population_risk_percent": 1.97,
+      "variant_score": "4 out of 5",
+      "summary": null,
+      "confidence": 0.9
+    }
+  ],
+  "pharmacogenomics": [
+    {
+      "drug_name": "Clopidogrel",
+      "gene": "CYP2C19",
+      "genotype": "*1/*2",
+      "phenotype": "Intermediate metabolizer",
+      "implication": "Therapy less effective",
+      "actionability": "actionable",
+      "recommendation_summary": "Discuss with the prescribing clinician before use.",
+      "evidence_level": null,
+      "confidence": 0.9
+    }
+  ],
+  "genetic_variants": []
+}
+```
+
 ## 8. Review screen
 
 This is one of the most important screens.
@@ -581,6 +719,12 @@ Each row:
 Test name | Value | Unit | Reference range | Date | Confidence | Accept/Edit/Reject
 ```
 
+Genetic rows use the same draft workflow but render as:
+
+```text
+Medication/condition/trait/variant | Printed implication | Source report | Confidence | Accept/Reject
+```
+
 User actions:
 
 1. Accept all high-confidence
@@ -592,7 +736,8 @@ User actions:
 
 Confirmed observations become trusted.
 
-Draft observations must not appear in dashboards unless explicitly toggled.
+Draft observations and draft genetic findings must not appear in dashboards, AI
+context, genetics pages, or exports unless explicitly toggled.
 
 ## 9. Profile isolation
 
@@ -624,6 +769,7 @@ AI context should combine:
 2. Recent and relevant health rollups
 3. Meaningful health events
 4. Medication events and document summaries
+5. Confirmed genetic context: pharmacogenomics, risks, traits, and report provenance
 
 Dense raw wearable samples must be summarized before they enter AI context.
 Context builders should prefer source-agnostic concepts such as "daily sleep
@@ -651,6 +797,8 @@ The AI should not:
 4. Make emergency decisions
 5. Use another profile’s data accidentally
 6. Invent missing lab values
+7. Treat genetic predisposition as diagnosis
+8. Use pharmacogenomics to start, stop, switch, or dose medication
 
 ### AI answer style
 
@@ -679,7 +827,8 @@ Before sending to LLM:
 3. Remove PII
 4. Remove names, phone numbers, addresses
 5. Include document summaries, not raw PDFs by default
-6. Log the exact context packet
+6. Include summarized genetic context, not raw variant dumps by default
+7. Log the exact context packet
 
 `ai_context_logs`
 
@@ -854,6 +1003,7 @@ Original PDF/image → DocumentReference
 Medication → MedicationStatement / MedicationRequest
 Diagnosis → Condition
 Procedure/imaging → Procedure / DiagnosticReport
+Genetic risk / pharmacogenomics → Observation
 ```
 
 ABDM’s FHIR implementation also groups lab results through `DiagnosticReport` referencing `Observation`, which matches your model well. ([nrces.in][1])
@@ -865,10 +1015,11 @@ Per profile:
 1. Cover summary
 2. Current active conditions
 3. Current/recent medications
-4. Abnormal lab trends
-5. Timeline
-6. Attached document index
-7. Selected lab tables
+4. Genetic and pharmacogenomic notes
+5. Abnormal lab trends
+6. Timeline
+7. Attached document index
+8. Selected lab tables
 
 Doctor-friendly PDF matters more than raw FHIR for real-world Indian use.
 

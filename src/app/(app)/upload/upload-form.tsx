@@ -16,6 +16,7 @@ const DOC_TYPES = [
   { value: "imaging", label: "Imaging" },
   { value: "specialist_report", label: "Specialist report" },
   { value: "discharge_summary", label: "Discharge summary" },
+  { value: "genetic_report", label: "Genetic report" },
   { value: "invoice", label: "Invoice" },
   { value: "other", label: "Other" },
 ];

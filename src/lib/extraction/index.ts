@@ -81,6 +81,36 @@ export async function processDocument(documentId: string) {
         confidence: med.confidence,
       });
     }
+    for (const variant of result.genetic_variants) {
+      itemValues.push({
+        extractionJobId: job.id,
+        profileId: doc.profileId,
+        itemType: "genetic_variant",
+        status: "draft",
+        rawJson: { ...variant, genetic_report: result.genetic_report, report_date: result.report_date },
+        confidence: variant.confidence,
+      });
+    }
+    for (const risk of result.genetic_risks) {
+      itemValues.push({
+        extractionJobId: job.id,
+        profileId: doc.profileId,
+        itemType: risk.category === "trait" ? "genetic_trait" : "genetic_risk",
+        status: "draft",
+        rawJson: { ...risk, genetic_report: result.genetic_report, report_date: result.report_date },
+        confidence: risk.confidence,
+      });
+    }
+    for (const pgx of result.pharmacogenomics) {
+      itemValues.push({
+        extractionJobId: job.id,
+        profileId: doc.profileId,
+        itemType: "pharmacogenomic_result",
+        status: "draft",
+        rawJson: { ...pgx, genetic_report: result.genetic_report, report_date: result.report_date },
+        confidence: pgx.confidence,
+      });
+    }
     if (result.report) {
       itemValues.push({
         extractionJobId: job.id,

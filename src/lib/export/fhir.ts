@@ -121,6 +121,41 @@ export function buildFhirBundle(bundle: ProfileBundle) {
     });
   }
 
+  for (const r of bundle.geneticRisks) {
+    entries.push({
+      resource: {
+        resourceType: "Observation",
+        id: `genetic-risk-${r.id}`,
+        status: "final",
+        category: [{ text: "genetics" }],
+        code: { text: `Genetic ${r.category} risk: ${r.conditionName}` },
+        subject: { reference: `Patient/${patientId}` },
+        valueString: [r.assessment, r.riskLevel].filter(Boolean).join("; "),
+        note: r.summary ? [{ text: r.summary }] : undefined,
+      },
+    });
+  }
+
+  for (const p of bundle.pharmacogenomics) {
+    entries.push({
+      resource: {
+        resourceType: "Observation",
+        id: `pharmacogenomic-${p.id}`,
+        status: "final",
+        category: [{ text: "pharmacogenomics" }],
+        code: { text: `Pharmacogenomic result: ${p.drugName}` },
+        subject: { reference: `Patient/${patientId}` },
+        valueString: p.implication,
+        component: [
+          { code: { text: "Gene" }, valueString: p.gene ?? undefined },
+          { code: { text: "Genotype" }, valueString: p.genotype ?? undefined },
+          { code: { text: "Phenotype" }, valueString: p.phenotype ?? undefined },
+        ].filter((c) => c.valueString),
+        note: p.recommendationSummary ? [{ text: p.recommendationSummary }] : undefined,
+      },
+    });
+  }
+
   // Medication events → MedicationStatement
   for (const m of bundle.medEvents) {
     entries.push({

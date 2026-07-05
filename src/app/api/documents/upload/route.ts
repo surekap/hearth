@@ -27,6 +27,7 @@ const metaSchema = z.object({
       "imaging",
       "specialist_report",
       "discharge_summary",
+      "genetic_report",
       "invoice",
       "other",
     ])

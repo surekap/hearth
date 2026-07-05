@@ -64,6 +64,10 @@ export async function extractWithMock(input: {
     }),
     report: null,
     medications: [],
+    genetic_report: null,
+    genetic_variants: [],
+    genetic_risks: [],
+    pharmacogenomics: [],
     warnings: ["Mock extraction provider was used — values are sample data, not from your document."],
     uncertain_items: [],
   };

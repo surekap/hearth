@@ -44,6 +44,34 @@ export type AiContext = {
     end: string | null;
     source: string;
   }>;
+  genomics: {
+    reports: Array<{
+      id: string;
+      vendor: string | null;
+      reportName: string | null;
+      reportDate: string | null;
+      testKind: string;
+      summary: string | null;
+    }>;
+    risks: Array<{
+      category: string;
+      condition: string;
+      assessment: string | null;
+      riskLevel: string;
+      lifetimeRiskPercent: number | null;
+      populationRiskPercent: number | null;
+      variantScore: string | null;
+    }>;
+    pharmacogenomics: Array<{
+      drug: string;
+      gene: string | null;
+      genotype: string | null;
+      phenotype: string | null;
+      implication: string;
+      actionability: string;
+      recommendationSummary: string | null;
+    }>;
+  };
   /** Self-reported in past AI conversations — history-taking notes, not lab facts. */
   patientReported: Array<{
     kind: string;
@@ -132,6 +160,24 @@ export async function buildAiContext(
   });
   const events = eventsDesc.reverse();
 
+  const [geneticReports, geneticRisks, pharmacogenomics] = await Promise.all([
+    db.query.geneticReports.findMany({
+      where: eq(schema.geneticReports.profileId, profileId),
+      orderBy: [asc(schema.geneticReports.reportDate)],
+      limit: 20,
+    }),
+    db.query.geneticRiskAssessments.findMany({
+      where: eq(schema.geneticRiskAssessments.profileId, profileId),
+      orderBy: [asc(schema.geneticRiskAssessments.createdAt)],
+      limit: 100,
+    }),
+    db.query.pharmacogenomicResults.findMany({
+      where: eq(schema.pharmacogenomicResults.profileId, profileId),
+      orderBy: [asc(schema.pharmacogenomicResults.createdAt)],
+      limit: 100,
+    }),
+  ]);
+
   const reported = await db.query.conversationDatapoints.findMany({
     where: eq(schema.conversationDatapoints.profileId, profileId),
     orderBy: (d, { desc }) => [desc(d.notedAt)],
@@ -185,6 +231,34 @@ export async function buildAiContext(
       end: e.endAt?.toISOString() ?? null,
       source: e.source,
     })),
+    genomics: {
+      reports: geneticReports.map((r) => ({
+        id: r.id,
+        vendor: r.vendor,
+        reportName: r.reportName,
+        reportDate: r.reportDate,
+        testKind: r.testKind,
+        summary: r.summary,
+      })),
+      risks: geneticRisks.map((r) => ({
+        category: r.category,
+        condition: r.conditionName,
+        assessment: r.assessment,
+        riskLevel: r.riskLevel,
+        lifetimeRiskPercent: r.lifetimeRiskPercent,
+        populationRiskPercent: r.populationRiskPercent,
+        variantScore: r.variantScore,
+      })),
+      pharmacogenomics: pharmacogenomics.map((p) => ({
+        drug: p.drugName,
+        gene: p.gene,
+        genotype: p.genotype,
+        phenotype: p.phenotype,
+        implication: p.implication,
+        actionability: p.actionability,
+        recommendationSummary: p.recommendationSummary,
+      })),
+    },
     patientReported: reported.map((d) => ({
       kind: d.kind,
       label: d.label,

@@ -444,7 +444,7 @@ async function loadMarkers(profileId: string, start: Date | null): Promise<Dashb
   });
   const markers: DashboardMarker[] = docs
     .filter((d) =>
-      ["prescription", "imaging", "specialist_report", "discharge_summary"].includes(
+      ["prescription", "imaging", "specialist_report", "discharge_summary", "genetic_report"].includes(
         d.documentType
       )
     )
@@ -455,7 +455,9 @@ async function loadMarkers(profileId: string, start: Date | null): Promise<Dashb
           ? "Prescription"
           : d.documentType === "imaging"
             ? "Imaging"
-            : "Specialist report",
+            : d.documentType === "genetic_report"
+              ? "Genetic report"
+              : "Specialist report",
       kind: d.documentType === "prescription" ? ("prescription" as const) : ("report" as const),
     }));
 

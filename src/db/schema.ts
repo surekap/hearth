@@ -31,6 +31,7 @@ export const documentTypeEnum = pgEnum("document_type", [
   "imaging",
   "specialist_report",
   "discharge_summary",
+  "genetic_report",
   "invoice",
   "other",
 ]);
@@ -69,6 +70,10 @@ export const extractedItemTypeEnum = pgEnum("extracted_item_type", [
   "diagnosis",
   "procedure",
   "report_summary",
+  "genetic_variant",
+  "genetic_risk",
+  "genetic_trait",
+  "pharmacogenomic_result",
 ]);
 
 export const extractedItemStatusEnum = pgEnum("extracted_item_status", [
@@ -186,6 +191,29 @@ export const clinicalReportTypeEnum = pgEnum("clinical_report_type", [
   "discharge",
   "procedure",
   "other",
+]);
+
+export const geneticTestKindEnum = pgEnum("genetic_test_kind", [
+  "predisposition",
+  "pharmacogenomics",
+  "carrier",
+  "raw_genotype",
+  "other",
+]);
+
+export const geneticRiskLevelEnum = pgEnum("genetic_risk_level", [
+  "low",
+  "normal",
+  "medium",
+  "high",
+  "unknown",
+]);
+
+export const pharmacogenomicActionabilityEnum = pgEnum("pharmacogenomic_actionability", [
+  "informational",
+  "actionable",
+  "high_impact",
+  "unknown",
 ]);
 
 // ---------- Tables ----------
@@ -501,6 +529,146 @@ export const clinicalReports = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("clinical_reports_profile_idx").on(t.profileId)]
+);
+
+export const geneticReports = pgTable(
+  "genetic_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    vendor: text("vendor"),
+    reportName: text("report_name"),
+    reportDate: date("report_date"),
+    testKind: geneticTestKindEnum("test_kind").notNull().default("other"),
+    genomeBuild: text("genome_build"),
+    summary: text("summary"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("genetic_reports_profile_idx").on(t.profileId),
+    uniqueIndex("genetic_reports_profile_document_idx").on(t.profileId, t.documentId),
+  ]
+);
+
+export const geneticVariants = pgTable(
+  "genetic_variants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    geneticReportId: uuid("genetic_report_id")
+      .notNull()
+      .references(() => geneticReports.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    gene: text("gene"),
+    variantId: text("variant_id"),
+    marker: text("marker"),
+    chromosome: text("chromosome"),
+    position: text("position"),
+    genotype: text("genotype"),
+    phenotype: text("phenotype"),
+    sourceSection: text("source_section"),
+    metadataJson: jsonb("metadata_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("genetic_variants_profile_idx").on(t.profileId),
+    index("genetic_variants_report_idx").on(t.geneticReportId),
+  ]
+);
+
+export const geneticRiskAssessments = pgTable(
+  "genetic_risk_assessments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    geneticReportId: uuid("genetic_report_id")
+      .notNull()
+      .references(() => geneticReports.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    category: text("category").notNull().default("disease"),
+    conditionName: text("condition_name").notNull(),
+    assessment: text("assessment"),
+    riskLevel: geneticRiskLevelEnum("risk_level").notNull().default("unknown"),
+    lifetimeRiskPercent: doublePrecision("lifetime_risk_percent"),
+    populationRiskPercent: doublePrecision("population_risk_percent"),
+    variantScore: text("variant_score"),
+    summary: text("summary"),
+    metadataJson: jsonb("metadata_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("genetic_risks_profile_idx").on(t.profileId),
+    index("genetic_risks_report_idx").on(t.geneticReportId),
+  ]
+);
+
+export const pharmacogenomicResults = pgTable(
+  "pharmacogenomic_results",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    geneticReportId: uuid("genetic_report_id")
+      .notNull()
+      .references(() => geneticReports.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    drugName: text("drug_name").notNull(),
+    gene: text("gene"),
+    genotype: text("genotype"),
+    phenotype: text("phenotype"),
+    implication: text("implication").notNull(),
+    actionability: pharmacogenomicActionabilityEnum("actionability")
+      .notNull()
+      .default("unknown"),
+    recommendationSummary: text("recommendation_summary"),
+    evidenceLevel: text("evidence_level"),
+    metadataJson: jsonb("metadata_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("pgx_results_profile_idx").on(t.profileId),
+    index("pgx_results_report_idx").on(t.geneticReportId),
+  ]
+);
+
+export const geneticReannotations = pgTable(
+  "genetic_reannotations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    geneticReportId: uuid("genetic_report_id")
+      .notNull()
+      .references(() => geneticReports.id, { onDelete: "cascade" }),
+    sourceName: text("source_name").notNull(),
+    sourceUrl: text("source_url"),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+    classification: text("classification"),
+    notes: text("notes"),
+    metadataJson: jsonb("metadata_json"),
+  },
+  (t) => [
+    index("genetic_reannotations_profile_idx").on(t.profileId),
+    index("genetic_reannotations_report_idx").on(t.geneticReportId),
+  ]
 );
 
 export const medicationMaster = pgTable("medication_master", {

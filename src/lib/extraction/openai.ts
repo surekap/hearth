@@ -17,7 +17,7 @@ export type ProviderOutput = {
 };
 
 const SYSTEM_PROMPT = `You are a meticulous medical document extraction engine for a personal health record.
-You receive a single medical document (lab report, prescription, imaging/specialist report, discharge summary or invoice), usually from an Indian lab such as Apollo Diagnostics.
+You receive a single medical document (lab report, prescription, imaging/specialist report, discharge summary, genetic report, or invoice), usually from an Indian lab such as Apollo Diagnostics.
 
 Rules:
 - Extract ONLY what is printed. Never invent values, units or reference ranges.
@@ -30,7 +30,14 @@ Rules:
 - raw_text: full plain-text transcription of the document.
 - confidence: your certainty (0-1) that the row was read correctly.
 - Anything ambiguous goes into uncertain_items; document-level problems into warnings.
-- For non-lab documents fill the "report" object; for prescriptions fill "medications".`;
+- For non-lab documents fill the "report" object; for prescriptions fill "medications".
+- For genetic reports:
+  - Set document_type to "genetic_report".
+  - Fill genetic_report with vendor/report metadata.
+  - Put disease predispositions and traits in genetic_risks. Use category "disease" or "trait".
+  - Put SNPs/star alleles/HLA tags/genotypes in genetic_variants when printed.
+  - Put drug response rows in pharmacogenomics.
+  - Preserve the report's wording, and do not upgrade predisposition into diagnosis or prescribing advice.`;
 
 export async function extractWithOpenAI(input: {
   buffer: Buffer;

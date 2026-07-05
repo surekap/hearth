@@ -1,7 +1,7 @@
-import { and, asc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { db, schema } from "@/db";
 
-export const DASHBOARD_METRICS = [
+export const METABOLIC_CORE_METRICS = [
   "Weight",
   "ALT",
   "AST",
@@ -16,6 +16,63 @@ export const DASHBOARD_METRICS = [
   "Uric Acid",
 ] as const;
 
+const METABOLIC_CATEGORIES = new Set([
+  "body",
+  "liver",
+  "lipid",
+  "glucose",
+  "inflammation",
+  "vitamin",
+  "renal",
+]);
+
+const CATEGORY_LABELS: Record<string, string> = {
+  activity: "Activity",
+  allergy: "Allergies",
+  autoimmune: "Autoimmune",
+  body: "Body",
+  cardiac: "Cardiac",
+  cardiovascular: "Cardiovascular",
+  coagulation: "Coagulation",
+  environment: "Environment",
+  event: "Events",
+  glucose: "Glucose",
+  hematology: "Blood counts",
+  hormone: "Hormones",
+  infectious: "Infectious disease",
+  inflammation: "Inflammation",
+  lipid: "Lipids",
+  liver: "Liver",
+  mineral: "Minerals",
+  mobility: "Mobility",
+  nutrition: "Nutrition",
+  other: "Other",
+  renal: "Kidney",
+  respiratory: "Respiratory",
+  sleep: "Sleep",
+  thyroid: "Thyroid",
+  tumor_marker: "Cancer screening",
+  urine: "Urine",
+  vitamin: "Vitamins",
+};
+
+const CATEGORY_ORDER = [
+  "liver",
+  "lipid",
+  "glucose",
+  "body",
+  "cardiovascular",
+  "hematology",
+  "renal",
+  "thyroid",
+  "inflammation",
+  "vitamin",
+  "tumor_marker",
+  "urine",
+  "activity",
+  "sleep",
+];
+
 export type DashboardRange = "3m" | "6m" | "1y" | "3y" | "all";
 
 export function rangeStart(range: DashboardRange): Date | null {
@@ -27,7 +84,7 @@ export function rangeStart(range: DashboardRange): Date | null {
 }
 
 export type MetricPoint = {
-  date: string; // ISO
+  date: string;
   value: number;
   referenceLow: number | null;
   referenceHigh: number | null;
@@ -37,10 +94,36 @@ export type MetricPoint = {
 export type MetricCard = {
   name: string;
   category: string;
+  categoryLabel: string;
   unit: string | null;
   points: MetricPoint[];
   latest: MetricPoint | null;
   trend: "rising" | "falling" | "flat" | null;
+  attention: boolean;
+  reason: string | null;
+};
+
+export type DashboardSection = {
+  id: string;
+  title: string;
+  description: string;
+  cards: MetricCard[];
+};
+
+export type DashboardFocus = {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "neutral" | "warning" | "danger" | "success";
+};
+
+export type DashboardReportGroup = {
+  key: string;
+  label: string;
+  count: number;
+  followUpCount: number;
+  latestDate: string | null;
+  latestSummary: string | null;
 };
 
 export type DashboardMarker = {
@@ -48,6 +131,55 @@ export type DashboardMarker = {
   label: string;
   kind: "report" | "prescription" | "document" | "medication";
 };
+
+export type AdaptiveDashboardData = {
+  range: DashboardRange;
+  focus: DashboardFocus[];
+  sections: DashboardSection[];
+  allCards: MetricCard[];
+  derived: {
+    astAltRatio: number | null;
+    tgHdlRatio: number | null;
+    altTrend: string | null;
+    hba1cTrend: string | null;
+    abnormalCount: number;
+    totalCount: number;
+    activeCategoryCount: number;
+    reportGroupCount: number;
+    latestDate: string | null;
+  };
+  reportGroups: DashboardReportGroup[];
+  markers: DashboardMarker[];
+};
+
+type ObservationRow = {
+  observedAt: Date;
+  valueNumeric: number | null;
+  unit: string | null;
+  referenceLow: number | null;
+  referenceHigh: number | null;
+  interpretation: string;
+  observationTypeId: string;
+  typeName: string;
+  category: string;
+  normalUnit: string | null;
+};
+
+function categoryLabel(category: string) {
+  return CATEGORY_LABELS[category] ?? titleize(category);
+}
+
+function titleize(input: string) {
+  return input
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(" ");
+}
+
+function isAbnormal(interpretation: string | null | undefined) {
+  return interpretation === "high" || interpretation === "low" || interpretation === "critical";
+}
 
 function trendOf(points: MetricPoint[]): "rising" | "falling" | "flat" | null {
   if (points.length < 2) return null;
@@ -60,86 +192,262 @@ function trendOf(points: MetricPoint[]): "rising" | "falling" | "flat" | null {
   return "flat";
 }
 
-export async function getMetabolicLiverData(profileId: string, range: DashboardRange) {
-  const start = rangeStart(range);
+function cardReason(card: MetricCard) {
+  if (!card.latest) return null;
+  if (card.latest.interpretation === "critical") return "critical";
+  if (isAbnormal(card.latest.interpretation)) return card.latest.interpretation;
+  if (card.trend === "rising") return "rising";
+  if (card.trend === "falling") return "falling";
+  return null;
+}
 
-  const types = await db.query.observationTypes.findMany({
-    where: inArray(schema.observationTypes.canonicalName, [...DASHBOARD_METRICS]),
-  });
-  const typeIds = types.map((t) => t.id);
+function metricRank(card: MetricCard) {
+  const coreIndex = METABOLIC_CORE_METRICS.indexOf(
+    card.name as (typeof METABOLIC_CORE_METRICS)[number]
+  );
+  const categoryIndex = CATEGORY_ORDER.indexOf(card.category);
+  const latest = card.latest;
+  return [
+    latest?.interpretation === "critical" ? 0 : 1,
+    latest && isAbnormal(latest.interpretation) ? 0 : 1,
+    coreIndex === -1 ? 1 : 0,
+    coreIndex === -1 ? 999 : coreIndex,
+    card.trend && card.trend !== "flat" ? 0 : 1,
+    categoryIndex === -1 ? 999 : categoryIndex,
+    card.name,
+  ] as const;
+}
 
-  const conditions = [
-    eq(schema.observations.profileId, profileId),
-    eq(schema.observations.status, "confirmed"),
-    inArray(schema.observations.observationTypeId, typeIds),
-  ];
-  if (start) conditions.push(gte(schema.observations.observedAt, start));
+function compareCards(a: MetricCard, b: MetricCard) {
+  const ar = metricRank(a);
+  const br = metricRank(b);
+  for (let i = 0; i < ar.length; i++) {
+    const av = ar[i];
+    const bv = br[i];
+    if (typeof av === "number" && typeof bv === "number" && av !== bv) return av - bv;
+    if (typeof av === "string" && typeof bv === "string" && av !== bv) return av.localeCompare(bv);
+  }
+  return 0;
+}
 
-  const rows = await db.query.observations.findMany({
-    where: and(...conditions),
-    orderBy: [asc(schema.observations.observedAt)],
-  });
-
-  const byType = new Map<string, MetricPoint[]>();
+function buildCards(rows: ObservationRow[]): MetricCard[] {
+  const byType = new Map<string, ObservationRow[]>();
   for (const r of rows) {
     if (r.valueNumeric == null) continue;
     const list = byType.get(r.observationTypeId) ?? [];
-    list.push({
-      date: r.observedAt.toISOString(),
-      value: r.valueNumeric,
-      referenceLow: r.referenceLow,
-      referenceHigh: r.referenceHigh,
-      interpretation: r.interpretation,
-    });
+    list.push(r);
     byType.set(r.observationTypeId, list);
   }
 
-  const cards: MetricCard[] = DASHBOARD_METRICS.map((name) => {
-    const type = types.find((t) => t.canonicalName === name);
-    const points = type ? (byType.get(type.id) ?? []) : [];
-    return {
-      name,
-      category: type?.category ?? "other",
-      unit: points[points.length - 1]
-        ? (rows.find(
-            (r) =>
-              r.observationTypeId === type?.id &&
-              r.observedAt.toISOString() === points[points.length - 1].date
-          )?.unit ?? type?.normalUnit ?? null)
-        : (type?.normalUnit ?? null),
+  const cards = [...byType.values()].map((list) => {
+    const latestRow = list[list.length - 1];
+    const points = list.map((r) => ({
+      date: r.observedAt.toISOString(),
+      value: r.valueNumeric!,
+      referenceLow: r.referenceLow,
+      referenceHigh: r.referenceHigh,
+      interpretation: r.interpretation,
+    }));
+    const trend = trendOf(points);
+    const card: MetricCard = {
+      name: latestRow.typeName,
+      category: latestRow.category,
+      categoryLabel: categoryLabel(latestRow.category),
+      unit: latestRow.unit ?? latestRow.normalUnit,
       points,
       latest: points[points.length - 1] ?? null,
-      trend: trendOf(points),
+      trend,
+      attention: false,
+      reason: null,
     };
+    card.reason = cardReason(card);
+    card.attention = Boolean(
+      card.latest &&
+        (isAbnormal(card.latest.interpretation) ||
+          card.latest.interpretation === "critical" ||
+          (trend != null && trend !== "flat"))
+    );
+    return card;
   });
 
-  // Derived signals from latest values
-  const latestOf = (name: string) =>
-    cards.find((c) => c.name === name)?.latest?.value ?? null;
-  const alt = latestOf("ALT");
-  const ast = latestOf("AST");
-  const tg = latestOf("Triglycerides");
-  const hdl = latestOf("HDL");
+  return cards.sort(compareCards);
+}
 
-  const derived = {
-    astAltRatio: alt && ast ? Number((ast / alt).toFixed(2)) : null,
-    tgHdlRatio: tg && hdl ? Number((tg / hdl).toFixed(2)) : null,
-    altTrend: cards.find((c) => c.name === "ALT")?.trend ?? null,
-    hba1cTrend: cards.find((c) => c.name === "HbA1c")?.trend ?? null,
-    abnormalCount: rows.filter(
-      (r) => r.interpretation === "high" || r.interpretation === "low" || r.interpretation === "critical"
-    ).length,
-    totalCount: rows.length,
-  };
+function buildSections(cards: MetricCard[]): DashboardSection[] {
+  const sections: DashboardSection[] = [];
+  const attention = cards.filter((c) => c.latest && c.attention).slice(0, 6);
+  if (attention.length > 0) {
+    sections.push({
+      id: "attention",
+      title: "Needs attention",
+      description: "Abnormal latest values and meaningful trends from this profile.",
+      cards: attention,
+    });
+  }
 
-  // Timeline markers: clinical reports + prescriptions/imaging documents
-  const markerConditions = [eq(schema.documents.profileId, profileId)];
+  const metabolic = cards.filter((c) => METABOLIC_CATEGORIES.has(c.category));
+  if (metabolic.length > 0) {
+    sections.push({
+      id: "metabolic",
+      title: "Metabolic, liver & kidney",
+      description: "Only shown because this profile has relevant confirmed values.",
+      cards: metabolic.slice(0, 12),
+    });
+  }
+
+  const byCategory = new Map<string, MetricCard[]>();
+  for (const card of cards) {
+    if (METABOLIC_CATEGORIES.has(card.category)) continue;
+    const list = byCategory.get(card.category) ?? [];
+    list.push(card);
+    byCategory.set(card.category, list);
+  }
+
+  const categorySections = [...byCategory.entries()]
+    .sort(([a], [b]) => {
+      const ai = CATEGORY_ORDER.indexOf(a);
+      const bi = CATEGORY_ORDER.indexOf(b);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    })
+    .slice(0, 5)
+    .map(([category, categoryCards]) => ({
+      id: category,
+      title: categoryLabel(category),
+      description: "Appears because confirmed data exists in this area.",
+      cards: categoryCards.slice(0, 8),
+    }));
+
+  sections.push(...categorySections);
+  return sections;
+}
+
+function buildFocus(input: {
+  cards: MetricCard[];
+  rows: ObservationRow[];
+  reportGroups: DashboardReportGroup[];
+}): DashboardFocus[] {
+  const latestByName = new Map<string, MetricCard>();
+  for (const c of input.cards) latestByName.set(c.name, c);
+  const latest = input.cards.filter((c) => c.latest);
+  const abnormalLatest = latest.filter((c) => c.latest && isAbnormal(c.latest.interpretation));
+  const categories = new Set(latest.map((c) => c.category));
+  const latestDate = latest
+    .map((c) => c.latest?.date)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+
+  const out: DashboardFocus[] = [
+    {
+      label: "Needs attention",
+      value: String(abnormalLatest.length),
+      detail:
+        abnormalLatest.length === 0
+          ? "No latest confirmed values are flagged."
+          : abnormalLatest
+              .slice(0, 3)
+              .map((c) => c.name)
+              .join(", "),
+      tone: abnormalLatest.length > 0 ? "danger" : "success",
+    },
+    {
+      label: "Active areas",
+      value: String(categories.size),
+      detail:
+        categories.size === 0
+          ? "Upload confirmed data to build this view."
+          : [...categories].slice(0, 4).map(categoryLabel).join(", "),
+      tone: "neutral",
+    },
+    {
+      label: "Care reports",
+      value: String(input.reportGroups.length),
+      detail:
+        input.reportGroups.length === 0
+          ? "No specialist reports in this range."
+          : input.reportGroups
+              .slice(0, 3)
+              .map((g) => g.label)
+              .join(", "),
+      tone: input.reportGroups.some((g) => g.followUpCount > 0) ? "warning" : "neutral",
+    },
+    {
+      label: "Latest update",
+      value: latestDate
+        ? new Date(latestDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+        : "–",
+      detail: latestDate
+        ? "Most recent confirmed value."
+        : "No confirmed observations in this range.",
+      tone: "neutral",
+    },
+  ];
+
+  const alt = latestByName.get("ALT");
+  const hba1c = latestByName.get("HbA1c");
+  if (alt?.trend === "rising" || hba1c?.trend === "rising") {
+    out[0] = {
+      ...out[0],
+      tone: "warning",
+      detail: [alt?.trend === "rising" ? "ALT rising" : null, hba1c?.trend === "rising" ? "HbA1c rising" : null]
+        .filter(Boolean)
+        .join(", "),
+    };
+  }
+
+  return out;
+}
+
+function buildReportGroups(
+  reports: Awaited<ReturnType<typeof db.query.clinicalReports.findMany>>
+): DashboardReportGroup[] {
+  const groups = new Map<string, DashboardReportGroup>();
+  for (const report of reports) {
+    const key = (report.specialty ?? report.reportType ?? "other").toLowerCase();
+    const label = report.specialty ? titleize(report.specialty) : titleize(report.reportType);
+    const date = report.reportDate
+      ? new Date(report.reportDate).toISOString()
+      : report.createdAt.toISOString();
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        key,
+        label,
+        count: 1,
+        followUpCount: report.followUpRecommended ? 1 : 0,
+        latestDate: date,
+        latestSummary: report.summary ?? report.impression,
+      });
+      continue;
+    }
+    existing.count += 1;
+    if (report.followUpRecommended) existing.followUpCount += 1;
+    if (!existing.latestDate || date > existing.latestDate) {
+      existing.latestDate = date;
+      existing.latestSummary = report.summary ?? report.impression;
+    }
+  }
+  return [...groups.values()].sort((a, b) => {
+    if (a.followUpCount !== b.followUpCount) return b.followUpCount - a.followUpCount;
+    return (b.latestDate ?? "").localeCompare(a.latestDate ?? "");
+  });
+}
+
+function latestOf(cards: MetricCard[], name: string) {
+  return cards.find((c) => c.name === name)?.latest?.value ?? null;
+}
+
+async function loadMarkers(profileId: string, start: Date | null): Promise<DashboardMarker[]> {
   const docs = await db.query.documents.findMany({
-    where: and(...markerConditions),
+    where: eq(schema.documents.profileId, profileId),
     orderBy: [asc(schema.documents.uploadedAt)],
   });
   const markers: DashboardMarker[] = docs
-    .filter((d) => ["prescription", "imaging", "specialist_report", "discharge_summary"].includes(d.documentType))
+    .filter((d) =>
+      ["prescription", "imaging", "specialist_report", "discharge_summary"].includes(
+        d.documentType
+      )
+    )
     .map((d) => ({
       date: (d.documentDate ? new Date(d.documentDate) : d.uploadedAt).toISOString(),
       label:
@@ -151,7 +459,6 @@ export async function getMetabolicLiverData(profileId: string, range: DashboardR
       kind: d.documentType === "prescription" ? ("prescription" as const) : ("report" as const),
     }));
 
-  // Medication started/stopped markers (spec §12 timeline overlays)
   const medEvents = await db.query.medicationEvents.findMany({
     where: eq(schema.medicationEvents.profileId, profileId),
     orderBy: [asc(schema.medicationEvents.eventTime)],
@@ -166,9 +473,90 @@ export async function getMetabolicLiverData(profileId: string, range: DashboardR
     }
   }
 
-  const filteredMarkers = markers
+  return markers
     .filter((m) => !start || new Date(m.date) >= start)
     .sort((a, b) => a.date.localeCompare(b.date));
-
-  return { range, cards, derived, markers: filteredMarkers };
 }
+
+export async function getAdaptiveDashboardData(
+  profileId: string,
+  range: DashboardRange
+): Promise<AdaptiveDashboardData> {
+  const start = rangeStart(range);
+
+  const conditions = [
+    eq(schema.observations.profileId, profileId),
+    eq(schema.observations.status, "confirmed"),
+  ];
+  if (start) conditions.push(gte(schema.observations.observedAt, start));
+
+  const rows = await db
+    .select({
+      observedAt: schema.observations.observedAt,
+      valueNumeric: schema.observations.valueNumeric,
+      unit: schema.observations.unit,
+      referenceLow: schema.observations.referenceLow,
+      referenceHigh: schema.observations.referenceHigh,
+      interpretation: schema.observations.interpretation,
+      observationTypeId: schema.observations.observationTypeId,
+      typeName: schema.observationTypes.canonicalName,
+      category: schema.observationTypes.category,
+      normalUnit: schema.observationTypes.normalUnit,
+    })
+    .from(schema.observations)
+    .innerJoin(
+      schema.observationTypes,
+      eq(schema.observations.observationTypeId, schema.observationTypes.id)
+    )
+    .where(and(...conditions))
+    .orderBy(asc(schema.observations.observedAt));
+
+  const reportConditions = [eq(schema.clinicalReports.profileId, profileId)];
+  if (start) reportConditions.push(gte(schema.clinicalReports.createdAt, start));
+  const reports = await db.query.clinicalReports.findMany({
+    where: and(...reportConditions),
+    orderBy: [desc(schema.clinicalReports.createdAt)],
+    limit: 50,
+  });
+
+  const cards = buildCards(rows);
+  const reportGroups = buildReportGroups(reports);
+  const sections = buildSections(cards);
+  const alt = latestOf(cards, "ALT");
+  const ast = latestOf(cards, "AST");
+  const tg = latestOf(cards, "Triglycerides");
+  const hdl = latestOf(cards, "HDL");
+  const latestDate =
+    cards
+      .map((c) => c.latest?.date)
+      .filter(Boolean)
+      .sort()
+      .at(-1) ?? null;
+
+  const derived = {
+    astAltRatio: alt && ast ? Number((ast / alt).toFixed(2)) : null,
+    tgHdlRatio: tg && hdl ? Number((tg / hdl).toFixed(2)) : null,
+    altTrend: cards.find((c) => c.name === "ALT")?.trend ?? null,
+    hba1cTrend: cards.find((c) => c.name === "HbA1c")?.trend ?? null,
+    abnormalCount: rows.filter((r) => isAbnormal(r.interpretation)).length,
+    totalCount: rows.length,
+    activeCategoryCount: new Set(cards.map((c) => c.category)).size,
+    reportGroupCount: reportGroups.length,
+    latestDate,
+  };
+
+  const markers = await loadMarkers(profileId, start);
+  const focus = buildFocus({ cards, rows, reportGroups });
+
+  return {
+    range,
+    focus,
+    sections,
+    allCards: cards,
+    derived,
+    reportGroups,
+    markers,
+  };
+}
+
+export const getMetabolicLiverData = getAdaptiveDashboardData;

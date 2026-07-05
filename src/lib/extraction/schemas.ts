@@ -37,6 +37,53 @@ export const extractedMedicationSchema = z.object({
   confidence: z.number().min(0).max(1),
 });
 
+export const extractedGeneticReportSchema = z.object({
+  vendor: z.string().nullable(),
+  report_name: z.string().nullable(),
+  test_kind: z
+    .enum(["predisposition", "pharmacogenomics", "carrier", "raw_genotype", "other"])
+    .nullable(),
+  genome_build: z.string().nullable(),
+  summary: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+});
+
+export const extractedGeneticVariantSchema = z.object({
+  gene: z.string().nullable(),
+  variant_id: z.string().nullable(),
+  marker: z.string().nullable(),
+  chromosome: z.string().nullable(),
+  position: z.string().nullable(),
+  genotype: z.string().nullable(),
+  phenotype: z.string().nullable(),
+  source_section: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+});
+
+export const extractedGeneticRiskSchema = z.object({
+  category: z.enum(["disease", "trait"]),
+  condition_name: z.string(),
+  assessment: z.string().nullable(),
+  risk_level: z.enum(["low", "normal", "medium", "high", "unknown"]),
+  lifetime_risk_percent: z.number().nullable(),
+  population_risk_percent: z.number().nullable(),
+  variant_score: z.string().nullable(),
+  summary: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+});
+
+export const extractedPharmacogenomicResultSchema = z.object({
+  drug_name: z.string(),
+  gene: z.string().nullable(),
+  genotype: z.string().nullable(),
+  phenotype: z.string().nullable(),
+  implication: z.string(),
+  actionability: z.enum(["informational", "actionable", "high_impact", "unknown"]),
+  recommendation_summary: z.string().nullable(),
+  evidence_level: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+});
+
 export const extractionResultSchema = z.object({
   document_type: z.enum([
     "lab_report",
@@ -44,6 +91,7 @@ export const extractionResultSchema = z.object({
     "imaging",
     "specialist_report",
     "discharge_summary",
+    "genetic_report",
     "invoice",
     "other",
   ]),
@@ -54,6 +102,10 @@ export const extractionResultSchema = z.object({
   observations: z.array(extractedObservationSchema),
   report: extractedReportSchema.nullable(),
   medications: z.array(extractedMedicationSchema),
+  genetic_report: extractedGeneticReportSchema.nullable(),
+  genetic_variants: z.array(extractedGeneticVariantSchema),
+  genetic_risks: z.array(extractedGeneticRiskSchema),
+  pharmacogenomics: z.array(extractedPharmacogenomicResultSchema),
   warnings: z.array(z.string()),
   uncertain_items: z.array(z.string()),
 });
@@ -74,6 +126,10 @@ export const OPENAI_JSON_SCHEMA = {
     "observations",
     "report",
     "medications",
+    "genetic_report",
+    "genetic_variants",
+    "genetic_risks",
+    "pharmacogenomics",
     "warnings",
     "uncertain_items",
   ],
@@ -86,6 +142,7 @@ export const OPENAI_JSON_SCHEMA = {
         "imaging",
         "specialist_report",
         "discharge_summary",
+        "genetic_report",
         "invoice",
         "other",
       ],
@@ -187,6 +244,119 @@ export const OPENAI_JSON_SCHEMA = {
           dose: { type: ["string", "null"] },
           frequency: { type: ["string", "null"] },
           duration: { type: ["string", "null"] },
+          confidence: { type: "number" },
+        },
+      },
+    },
+    genetic_report: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: [
+        "vendor",
+        "report_name",
+        "test_kind",
+        "genome_build",
+        "summary",
+        "confidence",
+      ],
+      properties: {
+        vendor: { type: ["string", "null"] },
+        report_name: { type: ["string", "null"] },
+        test_kind: {
+          type: ["string", "null"],
+          enum: ["predisposition", "pharmacogenomics", "carrier", "raw_genotype", "other", null],
+        },
+        genome_build: { type: ["string", "null"] },
+        summary: { type: ["string", "null"] },
+        confidence: { type: "number" },
+      },
+    },
+    genetic_variants: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "gene",
+          "variant_id",
+          "marker",
+          "chromosome",
+          "position",
+          "genotype",
+          "phenotype",
+          "source_section",
+          "confidence",
+        ],
+        properties: {
+          gene: { type: ["string", "null"] },
+          variant_id: { type: ["string", "null"], description: "rsID, star allele, HLA tag, or other printed marker id" },
+          marker: { type: ["string", "null"] },
+          chromosome: { type: ["string", "null"] },
+          position: { type: ["string", "null"] },
+          genotype: { type: ["string", "null"] },
+          phenotype: { type: ["string", "null"] },
+          source_section: { type: ["string", "null"] },
+          confidence: { type: "number" },
+        },
+      },
+    },
+    genetic_risks: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "category",
+          "condition_name",
+          "assessment",
+          "risk_level",
+          "lifetime_risk_percent",
+          "population_risk_percent",
+          "variant_score",
+          "summary",
+          "confidence",
+        ],
+        properties: {
+          category: { type: "string", enum: ["disease", "trait"] },
+          condition_name: { type: "string" },
+          assessment: { type: ["string", "null"] },
+          risk_level: { type: "string", enum: ["low", "normal", "medium", "high", "unknown"] },
+          lifetime_risk_percent: { type: ["number", "null"] },
+          population_risk_percent: { type: ["number", "null"] },
+          variant_score: { type: ["string", "null"] },
+          summary: { type: ["string", "null"] },
+          confidence: { type: "number" },
+        },
+      },
+    },
+    pharmacogenomics: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "drug_name",
+          "gene",
+          "genotype",
+          "phenotype",
+          "implication",
+          "actionability",
+          "recommendation_summary",
+          "evidence_level",
+          "confidence",
+        ],
+        properties: {
+          drug_name: { type: "string" },
+          gene: { type: ["string", "null"] },
+          genotype: { type: ["string", "null"] },
+          phenotype: { type: ["string", "null"] },
+          implication: { type: "string" },
+          actionability: { type: "string", enum: ["informational", "actionable", "high_impact", "unknown"] },
+          recommendation_summary: {
+            type: ["string", "null"],
+            description: "Doctor-discussion implication only; never prescribe or dose.",
+          },
+          evidence_level: { type: ["string", "null"] },
           confidence: { type: "number" },
         },
       },

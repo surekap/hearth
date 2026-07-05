@@ -195,7 +195,10 @@ accepted_at
 
 ### 5.6 Observations
 
-Atomic measurements go here.
+Atomic measurements go here. This table is the canonical measurement surface for
+labs, vitals, wearable metrics, manual entries, and derived summaries. It should
+stay source-agnostic: Apple Health, Health Connect, device APIs, CSV imports, and
+document extraction all map into the same model.
 
 `observations`
 
@@ -205,6 +208,8 @@ profile_id
 document_id nullable
 observation_type_id
 observed_at
+start_at nullable
+end_at nullable
 value_numeric nullable
 value_text nullable
 unit nullable
@@ -212,6 +217,13 @@ reference_low nullable
 reference_high nullable
 interpretation: low | normal | high | critical | unknown
 source: document | apple_health | manual | imported
+aggregation: instant | interval | daily_sum | daily_avg | session_avg | min | max | derived
+external_source_type nullable
+external_source_id nullable
+source_name nullable
+device_name nullable
+metadata_json nullable
+raw_import_id nullable
 confidence
 status: draft | confirmed | rejected
 created_at
@@ -226,7 +238,7 @@ updated_at
 id
 canonical_name
 aliases[]
-category: liver | lipid | glucose | inflammation | renal | hematology | thyroid | vitamin | body | activity | sleep | cardiovascular | other
+category: liver | lipid | glucose | inflammation | renal | hematology | thyroid | vitamin | body | activity | sleep | cardiovascular | respiratory | nutrition | mobility | environment | event | other
 loinc_code nullable
 ucum_unit nullable
 normal_unit nullable
@@ -257,6 +269,117 @@ Steps
 VO2 max
 Blood pressure systolic
 Blood pressure diastolic
+```
+
+### 5.8 Health events
+
+Not all useful health information is a numeric observation. Workouts, sleep
+segments, high-heart-rate incidents, mindful sessions, symptoms, medication
+periods, illness episodes, and future native integrations should land as
+profile-scoped health events.
+
+`health_events`
+
+```text
+id
+profile_id
+import_id nullable
+event_type
+label
+start_at
+end_at nullable
+source: document | apple_health | manual | imported
+source_name nullable
+device_name nullable
+metadata_json nullable
+external_source_type nullable
+external_source_id nullable
+created_at
+```
+
+Examples:
+
+```text
+workout: Functional strength training
+sleep_stage: Asleep REM
+sleep_stage: Awake
+high_heart_rate_event
+mindful_session
+illness_episode
+medication_period
+```
+
+### 5.9 Imports and sync provenance
+
+Every bulk import should have a batch record. This keeps dedupe, auditability,
+rollback, and future reprocessing possible without tying the schema to Apple
+Health.
+
+`health_imports`
+
+```text
+id
+profile_id
+source_system: apple_health | health_connect | device_api | manual_csv | document_extraction | other
+source_format
+original_filename nullable
+sha256_hash nullable
+external_export_date nullable
+status: pending | processing | complete | failed
+summary_json nullable
+error nullable
+created_at
+completed_at nullable
+```
+
+For native anchored sync, keep a generic cursor table:
+
+`health_sync_state`
+
+```text
+id
+profile_id
+source_system
+external_type
+last_synced_at
+last_anchor
+status
+error
+```
+
+### 5.10 Health rollups
+
+Dashboards and AI context should not scan dense wearable samples. Use rollups for
+daily/weekly/monthly summaries and import-derived aggregates.
+
+`health_rollups`
+
+```text
+id
+profile_id
+import_id nullable
+period: day | week | month
+period_start
+period_end
+observation_type_id
+value_numeric
+unit nullable
+aggregation: daily_sum | daily_avg | min | max | derived
+source_observation_count
+metadata_json nullable
+created_at
+```
+
+Examples:
+
+```text
+Daily steps
+Daily sleep duration
+Daily REM/deep/core sleep duration
+Daily average HRV
+Daily resting heart rate
+Weekly workout minutes
+Monthly average weight
 ```
 
 ### 5.8 Reports
@@ -495,6 +618,17 @@ No mixed-family context unless the user explicitly chooses a comparative family 
 
 ## 10. AI Q&A
 
+AI context should combine:
+
+1. Confirmed clinical/lab observations
+2. Recent and relevant health rollups
+3. Meaningful health events
+4. Medication events and document summaries
+
+Dense raw wearable samples must be summarized before they enter AI context.
+Context builders should prefer source-agnostic concepts such as "daily sleep
+duration" or "weekly workout minutes" instead of Apple-specific record names.
+
 ### Allowed
 
 The AI can:
@@ -657,11 +791,20 @@ Better prototype approach:
 
 Be careful here. Scraping medicine sites can become fragile and legally messy.
 
-## 14. Apple Health integration
+## 14. General health data integration
 
-Phase 1 PWA: no direct HealthKit.
+Phase 1 PWA cannot directly read HealthKit, but it can import an Apple Health
+export and map it into the generalized Hearth schema:
 
-Phase 2 native iOS app reads:
+```text
+Apple Health quantity record -> observation or health_rollup
+Apple Health category record -> health_event and/or health_rollup
+Apple Health workout -> health_event with workout statistics in metadata
+Apple Health activity summary -> health_rollup
+Apple Health export file -> health_imports
+```
+
+Phase 1 import priority:
 
 1. Weight
 2. Resting heart rate
@@ -673,22 +816,24 @@ Phase 2 native iOS app reads:
 8. Blood glucose if available
 9. VO₂ max
 10. Medication logs if useful
+11. Body composition
+12. Respiratory rate / oxygen saturation
+13. Mobility metrics such as walking speed, step length, and steadiness
 
-Data maps into `observations` and activity/sleep tables.
+Phase 2 native iOS app adds direct HealthKit read permissions and background
+anchored sync, writing into the same `observations`, `health_events`,
+`health_rollups`, and `health_sync_state` tables.
 
-### HealthKit sync table
+This keeps future Health Connect, Garmin, Oura, WHOOP, Ultrahuman, CSV, and
+hospital export imports on the same path.
 
-`healthkit_sync`
+### Import policy
 
-```text
-id
-profile_id
-apple_health_type
-last_synced_at
-last_anchor
-status
-error
-```
+Avoid importing high-frequency samples directly into AI-facing timelines unless
+the product needs raw detail. Prefer daily rollups for dense signals such as
+heart rate, active energy, distance, walking metrics, and temperature. Keep raw
+provenance and metadata in import batches and observation/event metadata so the
+data can be reprocessed later.
 
 ## 15. Export
 
@@ -927,12 +1072,17 @@ Observation model
 Lab timeline
 Manual edit
 Canonical lab mapping
+Generic health imports
+Health events
+Health rollups
+Apple Health export import
 ```
 
 ### Milestone 4
 
 ```text
 Metabolic/liver dashboard
+Lifestyle/vitals rollups
 Trend charts
 Abnormal flags
 ```

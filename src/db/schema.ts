@@ -90,6 +90,11 @@ export const observationCategoryEnum = pgEnum("observation_category", [
   "activity",
   "sleep",
   "cardiovascular",
+  "respiratory",
+  "nutrition",
+  "mobility",
+  "environment",
+  "event",
   "allergy",
   "autoimmune",
   "coagulation",
@@ -121,6 +126,39 @@ export const observationStatusEnum = pgEnum("observation_status", [
   "draft",
   "confirmed",
   "rejected",
+]);
+
+export const observationAggregationEnum = pgEnum("observation_aggregation", [
+  "instant",
+  "interval",
+  "daily_sum",
+  "daily_avg",
+  "session_avg",
+  "min",
+  "max",
+  "derived",
+]);
+
+export const healthImportSourceSystemEnum = pgEnum("health_import_source_system", [
+  "apple_health",
+  "health_connect",
+  "device_api",
+  "manual_csv",
+  "document_extraction",
+  "other",
+]);
+
+export const healthImportStatusEnum = pgEnum("health_import_status", [
+  "pending",
+  "processing",
+  "complete",
+  "failed",
+]);
+
+export const healthRollupPeriodEnum = pgEnum("health_rollup_period", [
+  "day",
+  "week",
+  "month",
 ]);
 
 export const medicationFormEnum = pgEnum("medication_form", [
@@ -264,6 +302,54 @@ export const extractedItems = pgTable(
   (t) => [index("extracted_items_job_idx").on(t.extractionJobId)]
 );
 
+export const healthImports = pgTable(
+  "health_imports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    sourceSystem: healthImportSourceSystemEnum("source_system").notNull(),
+    sourceFormat: text("source_format").notNull(),
+    originalFilename: text("original_filename"),
+    sha256Hash: text("sha256_hash"),
+    externalExportDate: timestamp("external_export_date", { withTimezone: true }),
+    status: healthImportStatusEnum("status").notNull().default("pending"),
+    summaryJson: jsonb("summary_json"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("health_imports_profile_idx").on(t.profileId),
+    uniqueIndex("health_imports_profile_hash_idx").on(t.profileId, t.sha256Hash),
+  ]
+);
+
+export const healthSyncState = pgTable(
+  "health_sync_state",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    sourceSystem: healthImportSourceSystemEnum("source_system").notNull(),
+    externalType: text("external_type").notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastAnchor: text("last_anchor"),
+    status: healthImportStatusEnum("status").notNull().default("pending"),
+    error: text("error"),
+  },
+  (t) => [
+    index("health_sync_state_profile_idx").on(t.profileId),
+    uniqueIndex("health_sync_state_profile_type_idx").on(
+      t.profileId,
+      t.sourceSystem,
+      t.externalType
+    ),
+  ]
+);
+
 export const observationTypes = pgTable("observation_types", {
   id: uuid("id").primaryKey().defaultRandom(),
   canonicalName: text("canonical_name").notNull().unique(),
@@ -289,6 +375,8 @@ export const observations = pgTable(
       .notNull()
       .references(() => observationTypes.id),
     observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    startAt: timestamp("start_at", { withTimezone: true }),
+    endAt: timestamp("end_at", { withTimezone: true }),
     valueNumeric: doublePrecision("value_numeric"),
     valueText: text("value_text"),
     unit: text("unit"),
@@ -296,6 +384,15 @@ export const observations = pgTable(
     referenceHigh: doublePrecision("reference_high"),
     interpretation: interpretationEnum("interpretation").notNull().default("unknown"),
     source: observationSourceEnum("source").notNull().default("document"),
+    aggregation: observationAggregationEnum("aggregation").notNull().default("instant"),
+    externalSourceType: text("external_source_type"),
+    externalSourceId: text("external_source_id"),
+    sourceName: text("source_name"),
+    deviceName: text("device_name"),
+    metadataJson: jsonb("metadata_json"),
+    rawImportId: uuid("raw_import_id").references(() => healthImports.id, {
+      onDelete: "set null",
+    }),
     confidence: doublePrecision("confidence"),
     status: observationStatusEnum("status").notNull().default("draft"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -305,6 +402,80 @@ export const observations = pgTable(
     index("observations_profile_idx").on(t.profileId),
     index("observations_profile_type_idx").on(t.profileId, t.observationTypeId),
     index("observations_profile_status_idx").on(t.profileId, t.status),
+    index("observations_profile_time_idx").on(t.profileId, t.observedAt),
+    index("observations_import_idx").on(t.rawImportId),
+    uniqueIndex("observations_profile_external_idx").on(
+      t.profileId,
+      t.externalSourceType,
+      t.externalSourceId
+    ),
+  ]
+);
+
+export const healthEvents = pgTable(
+  "health_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    importId: uuid("import_id").references(() => healthImports.id, { onDelete: "set null" }),
+    eventType: text("event_type").notNull(),
+    label: text("label").notNull(),
+    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+    endAt: timestamp("end_at", { withTimezone: true }),
+    source: observationSourceEnum("source").notNull().default("imported"),
+    sourceName: text("source_name"),
+    deviceName: text("device_name"),
+    metadataJson: jsonb("metadata_json"),
+    externalSourceType: text("external_source_type"),
+    externalSourceId: text("external_source_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("health_events_profile_idx").on(t.profileId),
+    index("health_events_profile_time_idx").on(t.profileId, t.startAt),
+    index("health_events_import_idx").on(t.importId),
+    uniqueIndex("health_events_profile_external_idx").on(
+      t.profileId,
+      t.externalSourceType,
+      t.externalSourceId
+    ),
+  ]
+);
+
+export const healthRollups = pgTable(
+  "health_rollups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    importId: uuid("import_id").references(() => healthImports.id, { onDelete: "set null" }),
+    period: healthRollupPeriodEnum("period").notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    observationTypeId: uuid("observation_type_id")
+      .notNull()
+      .references(() => observationTypes.id),
+    valueNumeric: doublePrecision("value_numeric").notNull(),
+    unit: text("unit"),
+    aggregation: observationAggregationEnum("aggregation").notNull(),
+    sourceObservationCount: integer("source_observation_count").notNull().default(0),
+    metadataJson: jsonb("metadata_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("health_rollups_profile_idx").on(t.profileId),
+    index("health_rollups_profile_period_idx").on(t.profileId, t.period, t.periodStart),
+    index("health_rollups_import_idx").on(t.importId),
+    uniqueIndex("health_rollups_profile_metric_period_idx").on(
+      t.profileId,
+      t.period,
+      t.periodStart,
+      t.observationTypeId,
+      t.aggregation
+    ),
   ]
 );
 

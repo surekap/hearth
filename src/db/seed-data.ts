@@ -14,6 +14,11 @@ export type ObservationTypeSeed = {
     | "activity"
     | "sleep"
     | "cardiovascular"
+    | "respiratory"
+    | "nutrition"
+    | "mobility"
+    | "environment"
+    | "event"
     | "allergy"
     | "autoimmune"
     | "coagulation"
@@ -119,6 +124,59 @@ export const OBSERVATION_TYPE_SEEDS: ObservationTypeSeed[] = [
   // Activity / Sleep
   { canonicalName: "Steps", aliases: ["Step Count", "Daily Steps"], category: "activity", loincCode: "55423-8", normalUnit: "steps", description: "Daily step count" },
   { canonicalName: "Sleep Duration", aliases: ["Sleep Time", "Total Sleep"], category: "sleep", normalUnit: "hours", description: "Sleep duration" },
+  { canonicalName: "Active Energy Burned", aliases: ["Active Calories", "Move Calories"], category: "activity", normalUnit: "kcal", description: "Active energy burned" },
+  { canonicalName: "Basal Energy Burned", aliases: ["Resting Calories", "Basal Calories"], category: "activity", normalUnit: "kcal", description: "Estimated basal energy burned" },
+  { canonicalName: "Walking/Running Distance", aliases: ["Distance Walking Running", "Walking Distance", "Running Distance"], category: "activity", normalUnit: "km", description: "Walking and running distance" },
+  { canonicalName: "Cycling Distance", aliases: ["Distance Cycling"], category: "activity", normalUnit: "km", description: "Cycling distance" },
+  { canonicalName: "Swimming Distance", aliases: ["Distance Swimming"], category: "activity", normalUnit: "m", description: "Swimming distance" },
+  { canonicalName: "Swimming Stroke Count", aliases: ["Swim Strokes"], category: "activity", normalUnit: "count", description: "Swimming stroke count" },
+  { canonicalName: "Flights Climbed", aliases: ["Stairs Climbed"], category: "activity", normalUnit: "count", description: "Flights of stairs climbed" },
+  { canonicalName: "Exercise Time", aliases: ["Apple Exercise Time", "Exercise Minutes"], category: "activity", normalUnit: "min", description: "Exercise minutes" },
+  { canonicalName: "Stand Time", aliases: ["Apple Stand Time"], category: "activity", normalUnit: "min", description: "Standing time" },
+  { canonicalName: "Stand Hours", aliases: ["Apple Stand Hours"], category: "activity", normalUnit: "count", description: "Hours with at least one stand event" },
+  { canonicalName: "Workout Duration", aliases: ["Exercise Session Duration"], category: "activity", normalUnit: "min", description: "Workout/session duration" },
+  { canonicalName: "Physical Effort", aliases: ["Effort", "Workout Effort"], category: "activity", normalUnit: "kcal/hr·kg", description: "Estimated physical effort" },
+  { canonicalName: "Body Fat Percentage", aliases: ["Body Fat"], category: "body", normalUnit: "%", description: "Body fat percentage" },
+  { canonicalName: "Lean Body Mass", aliases: ["Lean Mass"], category: "body", normalUnit: "kg", description: "Lean body mass" },
+  { canonicalName: "Blood Glucose", aliases: ["Glucose", "Apple Blood Glucose"], category: "glucose", loincCode: "2339-0", normalUnit: "mg/dL", description: "Blood glucose reading" },
+  { canonicalName: "Heart Rate", aliases: ["BPM", "Pulse Rate"], category: "cardiovascular", loincCode: "8867-4", normalUnit: "bpm", description: "Heart rate" },
+  { canonicalName: "Walking Heart Rate Average", aliases: ["Walking HR Average"], category: "cardiovascular", normalUnit: "bpm", description: "Average heart rate while walking" },
+  { canonicalName: "Heart Rate Recovery One Minute", aliases: ["1 Minute Heart Rate Recovery", "HR Recovery"], category: "cardiovascular", normalUnit: "bpm", description: "Heart rate recovery one minute after exertion" },
+  { canonicalName: "Oxygen Saturation", aliases: ["SpO2", "Blood Oxygen"], category: "respiratory", loincCode: "2710-2", normalUnit: "%", description: "Peripheral oxygen saturation" },
+  { canonicalName: "Respiratory Rate", aliases: ["Breathing Rate"], category: "respiratory", loincCode: "9279-1", normalUnit: "breaths/min", description: "Respiratory rate" },
+  { canonicalName: "Body Temperature", aliases: ["Temperature"], category: "body", loincCode: "8310-5", normalUnit: "degC", description: "Body temperature" },
+  { canonicalName: "Walking Speed", aliases: ["Gait Speed"], category: "mobility", normalUnit: "km/hr", description: "Walking speed" },
+  { canonicalName: "Walking Step Length", aliases: ["Step Length"], category: "mobility", normalUnit: "cm", description: "Walking step length" },
+  { canonicalName: "Walking Double Support Percentage", aliases: ["Double Support"], category: "mobility", normalUnit: "%", description: "Percentage of walking time with both feet on the ground" },
+  { canonicalName: "Walking Asymmetry Percentage", aliases: ["Walking Asymmetry"], category: "mobility", normalUnit: "%", description: "Walking asymmetry percentage" },
+  { canonicalName: "Walking Steadiness", aliases: ["Apple Walking Steadiness"], category: "mobility", normalUnit: "%", description: "Walking steadiness estimate" },
+  { canonicalName: "Six Minute Walk Test Distance", aliases: ["6 Minute Walk Distance"], category: "mobility", normalUnit: "m", description: "Estimated six-minute walk test distance" },
+  { canonicalName: "Stair Ascent Speed", aliases: ["Stairs Up Speed"], category: "mobility", normalUnit: "m/s", description: "Stair ascent speed" },
+  { canonicalName: "Stair Descent Speed", aliases: ["Stairs Down Speed"], category: "mobility", normalUnit: "m/s", description: "Stair descent speed" },
+  { canonicalName: "Environmental Audio Exposure", aliases: ["Environmental Sound Exposure"], category: "environment", normalUnit: "dBASPL", description: "Environmental audio exposure" },
+  { canonicalName: "Headphone Audio Exposure", aliases: ["Headphone Sound Exposure"], category: "environment", normalUnit: "dBASPL", description: "Headphone audio exposure" },
+  { canonicalName: "Sleep In Bed Duration", aliases: ["In Bed"], category: "sleep", normalUnit: "hours", description: "Time in bed" },
+  { canonicalName: "Sleep Awake Duration", aliases: ["Awake During Sleep"], category: "sleep", normalUnit: "hours", description: "Awake time within a sleep window" },
+  { canonicalName: "Sleep Core Duration", aliases: ["Core Sleep"], category: "sleep", normalUnit: "hours", description: "Core sleep duration" },
+  { canonicalName: "Sleep Deep Duration", aliases: ["Deep Sleep"], category: "sleep", normalUnit: "hours", description: "Deep sleep duration" },
+  { canonicalName: "Sleep REM Duration", aliases: ["REM Sleep"], category: "sleep", normalUnit: "hours", description: "REM sleep duration" },
+  { canonicalName: "Sleep Unspecified Duration", aliases: ["Asleep Unspecified"], category: "sleep", normalUnit: "hours", description: "Asleep duration without stage classification" },
+  { canonicalName: "Sleep Duration Goal", aliases: ["Sleep Goal"], category: "sleep", normalUnit: "hours", description: "Sleep duration goal" },
+  { canonicalName: "Dietary Energy Consumed", aliases: ["Calories Consumed"], category: "nutrition", normalUnit: "kcal", description: "Dietary energy consumed" },
+  { canonicalName: "Dietary Protein", aliases: ["Protein Intake"], category: "nutrition", normalUnit: "g", description: "Dietary protein" },
+  { canonicalName: "Dietary Carbohydrates", aliases: ["Carbohydrate Intake", "Carbs"], category: "nutrition", normalUnit: "g", description: "Dietary carbohydrates" },
+  { canonicalName: "Dietary Sugar", aliases: ["Sugar Intake"], category: "nutrition", normalUnit: "g", description: "Dietary sugar" },
+  { canonicalName: "Dietary Fiber", aliases: ["Fiber Intake"], category: "nutrition", normalUnit: "g", description: "Dietary fiber" },
+  { canonicalName: "Dietary Fat Total", aliases: ["Total Fat Intake"], category: "nutrition", normalUnit: "g", description: "Total dietary fat" },
+  { canonicalName: "Dietary Fat Saturated", aliases: ["Saturated Fat Intake"], category: "nutrition", normalUnit: "g", description: "Saturated dietary fat" },
+  { canonicalName: "Dietary Fat Monounsaturated", aliases: ["Monounsaturated Fat Intake"], category: "nutrition", normalUnit: "g", description: "Monounsaturated dietary fat" },
+  { canonicalName: "Dietary Fat Polyunsaturated", aliases: ["Polyunsaturated Fat Intake"], category: "nutrition", normalUnit: "g", description: "Polyunsaturated dietary fat" },
+  { canonicalName: "Dietary Cholesterol", aliases: ["Cholesterol Intake"], category: "nutrition", normalUnit: "mg", description: "Dietary cholesterol" },
+  { canonicalName: "Dietary Sodium", aliases: ["Sodium Intake"], category: "nutrition", normalUnit: "mg", description: "Dietary sodium" },
+  { canonicalName: "Dietary Potassium", aliases: ["Potassium Intake"], category: "nutrition", normalUnit: "mg", description: "Dietary potassium" },
+  { canonicalName: "Dietary Calcium", aliases: ["Calcium Intake"], category: "nutrition", normalUnit: "mg", description: "Dietary calcium" },
+  { canonicalName: "Dietary Iron", aliases: ["Iron Intake"], category: "nutrition", normalUnit: "mg", description: "Dietary iron" },
+  { canonicalName: "Dietary Vitamin C", aliases: ["Vitamin C Intake"], category: "nutrition", normalUnit: "mg", description: "Dietary vitamin C intake" },
 
   // Minerals / Electrolytes / Iron studies
   { canonicalName: "Calcium", aliases: ["Serum Calcium", "Ca", "Total Calcium"], category: "mineral", normalUnit: "mg/dL", description: "Total serum calcium" },

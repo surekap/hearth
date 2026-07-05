@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { redactDeep } from "./redact";
 
@@ -26,6 +26,24 @@ export type AiContext = {
     summary: string | null;
     impression: string | null;
   }>;
+  healthRollups: Array<{
+    metric: string;
+    category: string;
+    period: string;
+    periodStart: string;
+    periodEnd: string;
+    value: number;
+    unit: string | null;
+    aggregation: string;
+    sourceObservationCount: number;
+  }>;
+  healthEvents: Array<{
+    type: string;
+    label: string;
+    start: string;
+    end: string | null;
+    source: string;
+  }>;
   /** Self-reported in past AI conversations — history-taking notes, not lab facts. */
   patientReported: Array<{
     kind: string;
@@ -52,7 +70,7 @@ export async function buildAiContext(
   });
   if (!profile) throw new Error("Profile not found");
 
-  const rows = await db
+  const rowsDesc = await db
     .select({
       observedAt: schema.observations.observedAt,
       valueNumeric: schema.observations.valueNumeric,
@@ -75,14 +93,44 @@ export async function buildAiContext(
         eq(schema.observations.status, "confirmed")
       )
     )
-    .orderBy(asc(schema.observations.observedAt))
+    .orderBy(desc(schema.observations.observedAt))
     .limit(500);
+  const rows = rowsDesc.reverse();
+
+  const rollupsDesc = await db
+    .select({
+      period: schema.healthRollups.period,
+      periodStart: schema.healthRollups.periodStart,
+      periodEnd: schema.healthRollups.periodEnd,
+      valueNumeric: schema.healthRollups.valueNumeric,
+      unit: schema.healthRollups.unit,
+      aggregation: schema.healthRollups.aggregation,
+      sourceObservationCount: schema.healthRollups.sourceObservationCount,
+      typeName: schema.observationTypes.canonicalName,
+      category: schema.observationTypes.category,
+    })
+    .from(schema.healthRollups)
+    .innerJoin(
+      schema.observationTypes,
+      eq(schema.healthRollups.observationTypeId, schema.observationTypes.id)
+    )
+    .where(eq(schema.healthRollups.profileId, profileId))
+    .orderBy(desc(schema.healthRollups.periodStart))
+    .limit(300);
+  const rollups = rollupsDesc.reverse();
 
   const reports = await db.query.clinicalReports.findMany({
     where: eq(schema.clinicalReports.profileId, profileId),
     orderBy: [asc(schema.clinicalReports.createdAt)],
     limit: 50,
   });
+
+  const eventsDesc = await db.query.healthEvents.findMany({
+    where: eq(schema.healthEvents.profileId, profileId),
+    orderBy: [desc(schema.healthEvents.startAt)],
+    limit: 100,
+  });
+  const events = eventsDesc.reverse();
 
   const reported = await db.query.conversationDatapoints.findMany({
     where: eq(schema.conversationDatapoints.profileId, profileId),
@@ -118,6 +166,24 @@ export async function buildAiContext(
       specialty: r.specialty,
       summary: r.summary,
       impression: r.impression,
+    })),
+    healthRollups: rollups.map((r) => ({
+      metric: r.typeName,
+      category: r.category,
+      period: r.period,
+      periodStart: r.periodStart.toISOString().slice(0, 10),
+      periodEnd: r.periodEnd.toISOString().slice(0, 10),
+      value: r.valueNumeric,
+      unit: r.unit,
+      aggregation: r.aggregation,
+      sourceObservationCount: r.sourceObservationCount,
+    })),
+    healthEvents: events.map((e) => ({
+      type: e.eventType,
+      label: e.label,
+      start: e.startAt.toISOString(),
+      end: e.endAt?.toISOString() ?? null,
+      source: e.source,
     })),
     patientReported: reported.map((d) => ({
       kind: d.kind,

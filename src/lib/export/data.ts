@@ -8,7 +8,16 @@ export async function loadProfileBundle(profileId: string) {
   });
   if (!profile) throw new Error("Profile not found");
 
-  const [observations, documents, reports, medEvents, recentMeds] = await Promise.all([
+  const [
+    observations,
+    documents,
+    reports,
+    medEvents,
+    recentMeds,
+    healthImports,
+    healthEvents,
+    healthRollups,
+  ] = await Promise.all([
     db
       .select({
         id: schema.observations.id,
@@ -49,6 +58,34 @@ export async function loadProfileBundle(profileId: string) {
       where: eq(schema.recentMedications.profileId, profileId),
       orderBy: [desc(schema.recentMedications.lastUsedAt)],
     }),
+    db.query.healthImports.findMany({
+      where: eq(schema.healthImports.profileId, profileId),
+      orderBy: [desc(schema.healthImports.createdAt)],
+    }),
+    db.query.healthEvents.findMany({
+      where: eq(schema.healthEvents.profileId, profileId),
+      orderBy: [desc(schema.healthEvents.startAt)],
+    }),
+    db
+      .select({
+        id: schema.healthRollups.id,
+        period: schema.healthRollups.period,
+        periodStart: schema.healthRollups.periodStart,
+        periodEnd: schema.healthRollups.periodEnd,
+        valueNumeric: schema.healthRollups.valueNumeric,
+        unit: schema.healthRollups.unit,
+        aggregation: schema.healthRollups.aggregation,
+        sourceObservationCount: schema.healthRollups.sourceObservationCount,
+        typeName: schema.observationTypes.canonicalName,
+        category: schema.observationTypes.category,
+      })
+      .from(schema.healthRollups)
+      .innerJoin(
+        schema.observationTypes,
+        eq(schema.healthRollups.observationTypeId, schema.observationTypes.id)
+      )
+      .where(eq(schema.healthRollups.profileId, profileId))
+      .orderBy(desc(schema.healthRollups.periodStart)),
   ]);
 
   // Exports only include confirmed clinical data.
@@ -60,6 +97,9 @@ export async function loadProfileBundle(profileId: string) {
     reports,
     medEvents,
     recentMeds,
+    healthImports,
+    healthEvents,
+    healthRollups,
   };
 }
 

@@ -90,6 +90,15 @@ export const observationCategoryEnum = pgEnum("observation_category", [
   "activity",
   "sleep",
   "cardiovascular",
+  "allergy",
+  "autoimmune",
+  "coagulation",
+  "hormone",
+  "infectious",
+  "mineral",
+  "urine",
+  "cardiac",
+  "tumor_marker",
   "other",
 ]);
 

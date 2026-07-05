@@ -2,7 +2,14 @@
 
 import { useTransition } from "react";
 import Link from "next/link";
-import { ChevronDown, UserRound, Users } from "lucide-react";
+import {
+  ChevronDown,
+  Download,
+  FileText,
+  Pill,
+  UserRound,
+  Users,
+} from "lucide-react";
 import { switchProfile } from "@/app/actions/profiles";
 import {
   DropdownMenu,
@@ -65,6 +72,28 @@ export function ProfileSwitcher({
             Manage profiles
           </Link>
         </DropdownMenuItem>
+        {/* Pages not in the 5-tab mobile nav stay reachable from here */}
+        <div className="md:hidden">
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link href="/meds">
+              <Pill className="size-4" />
+              Medications
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/documents">
+              <FileText className="size-4" />
+              Documents
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/export">
+              <Download className="size-4" />
+              Export
+            </Link>
+          </DropdownMenuItem>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );

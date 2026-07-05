@@ -4,8 +4,9 @@ Private, family-oriented health records: upload medical PDFs/images per family p
 extract lab values with an LLM into reviewable drafts, confirm them into a structured
 Postgres model, and explore trends, timelines and profile-scoped AI Q&A.
 
-Built from [SPEC.md](./SPEC.md) — Phase 1, Milestones 1–5 (the "first successful prototype"
-flow: upload → extract → review → confirm → timeline → dashboard → AI Q&A).
+Built from [SPEC.md](./SPEC.md) — all of Phase 1 (Milestones 1–7) plus the Phase 1.5
+iPhone ingestion workaround: upload → extract → review → confirm → timeline → dashboard →
+AI Q&A, medication logging, and JSON / FHIR / doctor-friendly PDF export.
 
 ## Stack
 
@@ -95,9 +96,31 @@ src/app/(app)/     timeline, dashboard, labs, documents, review, upload,
                    ask, profiles
 ```
 
+## Medications (Milestone 6)
+
+Accepted prescription extractions create `prescribed` medication events and appear as
+one-tap loggable chips on the Meds page. Manual add grows an internal medication
+dictionary (no third-party scraping) that powers autocomplete. Started/stopped/prescribed
+events show as markers on the timeline and dashboard.
+
+## Export (Milestone 7)
+
+Per profile, from the Export page (all audit-logged, confirmed data only):
+
+- **Doctor-friendly PDF** — cover summary, currently-abnormal values, medications,
+  lab history by category, report impressions, document index (pdf-lib)
+- **Internal JSON** — full raw bundle
+- **FHIR bundle** — Patient / Observation / DiagnosticReport / DocumentReference /
+  MedicationStatement, with lab Observations grouped under DiagnosticReport (ABDM-style)
+
+## iPhone uploads (Phase 1.5)
+
+Generate a bearer token on the Export page, then build an iOS Shortcut that POSTs the
+shared file to `/api/documents/upload` with `Authorization: Bearer <token>` and a
+`profileId` form field. Session-less uploads are validated, encrypted, deduped and
+profile-isolated exactly like PWA uploads.
+
 ## Roadmap (from SPEC.md)
 
-- **Milestone 6**: medication logging (prescription→loggable meds, quick log, recents)
-- **Milestone 7**: JSON / FHIR-inspired / doctor-friendly PDF export
-- **Phase 1.5**: iOS Shortcut upload API (token-authenticated endpoint)
 - **Phase 2**: native iOS shell with Share Extension + HealthKit sync
+- **Phase 3**: Android share intent + Health Connect

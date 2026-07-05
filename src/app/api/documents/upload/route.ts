@@ -51,9 +51,28 @@ function sniffMime(buf: Buffer): string | null {
   return null;
 }
 
+/**
+ * Session auth for the PWA, or bearer-token auth for the iOS Shortcut flow
+ * (Phase 1.5): Authorization: Bearer <users.api_token>.
+ */
+async function requireUploader(req: NextRequest) {
+  try {
+    return await requireUser();
+  } catch {
+    const header = req.headers.get("authorization");
+    const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
+    if (!token) throw new ApiError(401, "Not authenticated");
+    const user = await db.query.users.findFirst({
+      where: eq(schema.users.apiToken, token),
+    });
+    if (!user) throw new ApiError(401, "Invalid token");
+    return { userId: user.id, email: user.email };
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { userId } = await requireUser();
+    const { userId } = await requireUploader(req);
 
     const form = await req.formData();
     const file = form.get("file");

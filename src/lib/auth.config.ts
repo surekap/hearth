@@ -14,6 +14,9 @@ export const authConfig = {
         if (isLoggedIn) return Response.redirect(new URL("/", nextUrl));
         return true;
       }
+      // The upload endpoint accepts session OR a bearer token (iOS Shortcut);
+      // it enforces auth itself, so let it through the middleware.
+      if (nextUrl.pathname === "/api/documents/upload") return true;
       return isLoggedIn;
     },
     jwt({ token, user }) {

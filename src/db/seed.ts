@@ -28,7 +28,14 @@ async function main() {
       })
       .onConflictDoUpdate({
         target: schema.observationTypes.canonicalName,
-        set: { aliases: t.aliases, category: t.category },
+        set: {
+          aliases: t.aliases,
+          category: t.category,
+          loincCode: t.loincCode ?? null,
+          normalUnit: t.normalUnit ?? null,
+          ucumUnit: t.normalUnit ?? null,
+          description: t.description ?? null,
+        },
       });
   }
   console.log(`Seeded ${OBSERVATION_TYPE_SEEDS.length} observation types`);

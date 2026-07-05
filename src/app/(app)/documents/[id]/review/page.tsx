@@ -36,7 +36,7 @@ export default async function ReviewPage({
 
   const observationTypes = await db.query.observationTypes.findMany({
     orderBy: [asc(schema.observationTypes.canonicalName)],
-    columns: { id: true, canonicalName: true, category: true },
+    columns: { id: true, canonicalName: true, aliases: true, category: true },
   });
 
   return (

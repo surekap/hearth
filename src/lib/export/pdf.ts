@@ -8,6 +8,39 @@ const EMBER = rgb(0.72, 0.34, 0.18);
 const RED = rgb(0.78, 0.2, 0.16);
 const LINE = rgb(0.85, 0.82, 0.79);
 
+const PDF_TEXT_REPLACEMENTS: Record<string, string> = {
+  "\u00b5": "u",
+  "\u00d7": "x",
+  "\u2010": "-",
+  "\u2011": "-",
+  "\u2012": "-",
+  "\u2013": "-",
+  "\u2014": "-",
+  "\u2018": "'",
+  "\u2019": "'",
+  "\u201c": '"',
+  "\u201d": '"',
+  "\u2022": "-",
+  "\u00b7": "-",
+  "\u00b9": "^1",
+  "\u00b2": "^2",
+  "\u00b3": "^3",
+  "\u2070": "^0",
+  "\u2074": "^4",
+  "\u2075": "^5",
+  "\u2076": "^6",
+  "\u2077": "^7",
+  "\u2078": "^8",
+  "\u2079": "^9",
+};
+
+function pdfText(value: string): string {
+  const cleaned = value
+    .replace(/[\u00b5\u00d7\u2010-\u2014\u2018\u2019\u201c\u201d\u2022\u00b7\u00b9\u00b2\u00b3\u2070\u2074-\u2079]/g, (c) => PDF_TEXT_REPLACEMENTS[c] ?? "")
+    .replace(/[^\x20-\x7e]/g, " ");
+  return cleaned.length > 0 ? cleaned : " ";
+}
+
 /** Doctor-friendly PDF summary (spec §15): cover, abnormal trends, meds, lab tables, document index. */
 export async function buildDoctorPdf(bundle: ProfileBundle): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -30,7 +63,7 @@ export async function buildDoctorPdf(bundle: ProfileBundle): Promise<Uint8Array>
   ) => {
     const size = opts.size ?? 10;
     newPageIfNeeded(size + 6);
-    page.drawText(s, {
+    page.drawText(pdfText(s), {
       x: opts.x ?? PAGE.margin,
       y: y - size,
       size,
@@ -69,7 +102,7 @@ export async function buildDoctorPdf(bundle: ProfileBundle): Promise<Uint8Array>
     newPageIfNeeded(size + 5);
     values.forEach((v, i) => {
       const item = typeof v === "string" ? { t: v } : v;
-      page.drawText(item.t.slice(0, 60), {
+      page.drawText(pdfText(item.t).slice(0, 60), {
         x: PAGE.margin + xs[i],
         y: y - size,
         size,
@@ -247,7 +280,7 @@ export async function buildDoctorPdf(bundle: ProfileBundle): Promise<Uint8Array>
   // Footer on every page
   const pages = doc.getPages();
   pages.forEach((pg: PDFPage, i: number) => {
-    pg.drawText(`Hearth · ${p.displayName} · page ${i + 1}/${pages.length}`, {
+    pg.drawText(pdfText(`Hearth · ${p.displayName} · page ${i + 1}/${pages.length}`), {
       x: PAGE.margin,
       y: 24,
       size: 8,

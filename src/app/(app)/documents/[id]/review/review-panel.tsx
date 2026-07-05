@@ -18,7 +18,7 @@ type Item = {
   userCorrected: boolean;
 };
 
-type ObsType = { id: string; canonicalName: string; category: string };
+type ObsType = { id: string; canonicalName: string; aliases: string[]; category: string };
 
 type Decision = "accept" | "reject";
 
@@ -38,6 +38,10 @@ function confBadge(c: number | null) {
     return <Badge className="bg-emerald-600 text-white">{pct}%</Badge>;
   if (c >= 0.5) return <Badge className="bg-amber-500 text-white">{pct}%</Badge>;
   return <Badge variant="destructive">{pct}%</Badge>;
+}
+
+function normalizeTypeName(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 export function ReviewPanel({
@@ -79,7 +83,10 @@ export function ReviewPanel({
 
   const typeByName = useMemo(() => {
     const m = new Map<string, ObsType>();
-    for (const t of observationTypes) m.set(t.canonicalName.toLowerCase(), t);
+    for (const t of observationTypes) {
+      m.set(normalizeTypeName(t.canonicalName), t);
+      for (const alias of t.aliases) m.set(normalizeTypeName(alias), t);
+    }
     return m;
   }, [observationTypes]);
 
@@ -92,11 +99,11 @@ export function ReviewPanel({
   function mappedTypeId(item: Item): string | null {
     const explicit = field<string | null>(item, "observation_type_id");
     if (explicit) return explicit;
-    const canonical = (item.rawJson.canonical_name as string | null)?.toLowerCase();
-    const testName = (item.rawJson.test_name as string | null)?.toLowerCase();
+    const canonical = item.rawJson.canonical_name as string | null;
+    const testName = item.rawJson.test_name as string | null;
     return (
-      (canonical && typeByName.get(canonical)?.id) ||
-      (testName && typeByName.get(testName)?.id) ||
+      (canonical && typeByName.get(normalizeTypeName(canonical))?.id) ||
+      (testName && typeByName.get(normalizeTypeName(testName))?.id) ||
       null
     );
   }

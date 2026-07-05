@@ -45,7 +45,7 @@ export const OBSERVATION_TYPE_SEEDS: ObservationTypeSeed[] = [
   { canonicalName: "Fasting Insulin", aliases: ["Insulin Fasting", "Serum Insulin"], category: "glucose", loincCode: "3701-0", normalUnit: "µIU/mL", description: "Fasting serum insulin" },
   { canonicalName: "HOMA-IR", aliases: ["Insulin Resistance Index"], category: "glucose", normalUnit: "", description: "Homeostatic model assessment of insulin resistance" },
   // Inflammation
-  { canonicalName: "CRP", aliases: ["C-Reactive Protein", "hs-CRP", "hsCRP", "High Sensitivity CRP", "C Reactive Protein"], category: "inflammation", loincCode: "1988-5", normalUnit: "mg/L", description: "C-reactive protein" },
+  { canonicalName: "CRP", aliases: ["C-Reactive Protein", "C-Reactive Protein CRP", "C Reactive Protein", "C Reactive Protein CRP", "hs-CRP", "hsCRP", "High Sensitivity CRP"], category: "inflammation", loincCode: "1988-5", normalUnit: "mg/L", description: "C-reactive protein" },
   { canonicalName: "ESR", aliases: ["Erythrocyte Sedimentation Rate", "Sed Rate"], category: "inflammation", loincCode: "30341-2", normalUnit: "mm/hr", description: "Erythrocyte sedimentation rate" },
   // Renal
   { canonicalName: "Creatinine", aliases: ["Serum Creatinine", "S. Creatinine"], category: "renal", loincCode: "2160-0", normalUnit: "mg/dL", description: "Serum creatinine" },
@@ -56,10 +56,27 @@ export const OBSERVATION_TYPE_SEEDS: ObservationTypeSeed[] = [
   { canonicalName: "Potassium", aliases: ["Serum Potassium", "K", "K+"], category: "renal", loincCode: "2823-3", normalUnit: "mmol/L", description: "Serum potassium" },
   // Hematology
   { canonicalName: "Hemoglobin", aliases: ["Hb", "HGB", "Haemoglobin"], category: "hematology", loincCode: "718-7", normalUnit: "g/dL", description: "Hemoglobin" },
-  { canonicalName: "WBC Count", aliases: ["Total Leukocyte Count", "TLC", "White Blood Cell Count", "Total WBC"], category: "hematology", loincCode: "6690-2", normalUnit: "10³/µL", description: "White blood cell count" },
+  { canonicalName: "WBC Count", aliases: ["Total Leukocyte Count", "Total Leukocyte Count TLC", "Total Leucocyte Count", "Total Leucocyte Count TLC", "TLC", "T.L.C", "White Blood Cell Count", "White Blood Cells", "WBC", "Total WBC", "Leukocyte Count", "Leucocyte Count"], category: "hematology", loincCode: "6690-2", normalUnit: "10³/µL", description: "White blood cell count" },
+  { canonicalName: "Corrected WBC Count", aliases: ["Corrected TLC", "Corrected T.L.C", "Corrected Total Leukocyte Count", "Corrected Total Leukocyte Count TLC", "Corrected Total Leucocyte Count", "Corrected Total Leucocyte Count TLC", "Corrected WBC", "Corrected White Blood Cell Count"], category: "hematology", normalUnit: "10³/µL", description: "White blood cell count corrected for nucleated red blood cells" },
   { canonicalName: "Platelet Count", aliases: ["Platelets", "PLT"], category: "hematology", loincCode: "777-3", normalUnit: "10³/µL", description: "Platelet count" },
-  { canonicalName: "RBC Count", aliases: ["Red Blood Cell Count", "Total RBC"], category: "hematology", loincCode: "789-8", normalUnit: "10⁶/µL", description: "Red blood cell count" },
+  { canonicalName: "MPV", aliases: ["Mean Platelet Volume", "Mean Platelet Volume MPV"], category: "hematology", loincCode: "32623-1", normalUnit: "fL", description: "Mean platelet volume" },
+  { canonicalName: "RBC Count", aliases: ["Red Blood Cell Count", "Total RBC", "Erythrocyte Count"], category: "hematology", loincCode: "789-8", normalUnit: "10⁶/µL", description: "Red blood cell count" },
   { canonicalName: "Hematocrit", aliases: ["HCT", "PCV", "Packed Cell Volume"], category: "hematology", loincCode: "4544-3", normalUnit: "%", description: "Hematocrit" },
+  { canonicalName: "MCV", aliases: ["Mean Corpuscular Volume"], category: "hematology", loincCode: "787-2", normalUnit: "fL", description: "Mean corpuscular volume" },
+  { canonicalName: "MCH", aliases: ["Mean Corpuscular Hemoglobin", "Mean Corpuscular Haemoglobin"], category: "hematology", loincCode: "785-6", normalUnit: "pg", description: "Mean corpuscular hemoglobin" },
+  { canonicalName: "MCHC", aliases: ["Mean Corpuscular Hemoglobin Concentration", "Mean Corpuscular Haemoglobin Concentration"], category: "hematology", loincCode: "786-4", normalUnit: "g/dL", description: "Mean corpuscular hemoglobin concentration" },
+  { canonicalName: "RDW", aliases: ["R.D.W", "RDW-CV", "Red Cell Distribution Width", "Red Cell Distribution Width CV"], category: "hematology", loincCode: "788-0", normalUnit: "%", description: "Red cell distribution width" },
+  { canonicalName: "Neutrophils", aliases: ["Neutrophil", "Neutrophils Percent", "Neutrophil Percent", "Neutrophils %"], category: "hematology", loincCode: "770-8", normalUnit: "%", description: "Neutrophils as a percentage of leukocytes" },
+  { canonicalName: "Lymphocytes", aliases: ["Lymphocyte", "Lymphocytes Percent", "Lymphocyte Percent", "Lymphocytes %"], category: "hematology", loincCode: "736-9", normalUnit: "%", description: "Lymphocytes as a percentage of leukocytes" },
+  { canonicalName: "Eosinophils", aliases: ["Eosinophil", "Eosinophils Percent", "Eosinophil Percent", "Eosinophils %"], category: "hematology", loincCode: "713-8", normalUnit: "%", description: "Eosinophils as a percentage of leukocytes" },
+  { canonicalName: "Monocytes", aliases: ["Monocyte", "Monocytes Percent", "Monocyte Percent", "Monocytes %"], category: "hematology", loincCode: "5905-5", normalUnit: "%", description: "Monocytes as a percentage of leukocytes" },
+  { canonicalName: "Basophils", aliases: ["Basophil", "Basophils Percent", "Basophil Percent", "Basophils %"], category: "hematology", loincCode: "706-2", normalUnit: "%", description: "Basophils as a percentage of leukocytes" },
+  { canonicalName: "Absolute Neutrophil Count", aliases: ["ANC", "Abs Neutrophils", "Absolute Neutrophils", "Absolute Neutrophil", "Absolute Leukocyte Count Neutrophils", "Absolute Leucocyte Count Neutrophils"], category: "hematology", loincCode: "751-8", normalUnit: "cells/µL", description: "Absolute neutrophil count" },
+  { canonicalName: "Absolute Lymphocyte Count", aliases: ["ALC", "Abs Lymphocytes", "Absolute Lymphocytes", "Absolute Lymphocyte", "Absolute Leukocyte Count Lymphocytes", "Absolute Leucocyte Count Lymphocytes"], category: "hematology", loincCode: "731-0", normalUnit: "cells/µL", description: "Absolute lymphocyte count" },
+  { canonicalName: "Absolute Eosinophil Count", aliases: ["AEC", "Abs Eosinophils", "Absolute Eosinophils", "Absolute Eosinophil", "Absolute Leukocyte Count Eosinophils", "Absolute Leucocyte Count Eosinophils"], category: "hematology", loincCode: "711-2", normalUnit: "cells/µL", description: "Absolute eosinophil count" },
+  { canonicalName: "Absolute Monocyte Count", aliases: ["AMC", "Abs Monocytes", "Absolute Monocytes", "Absolute Monocyte", "Absolute Leukocyte Count Monocytes", "Absolute Leucocyte Count Monocytes"], category: "hematology", loincCode: "742-7", normalUnit: "cells/µL", description: "Absolute monocyte count" },
+  { canonicalName: "Absolute Basophil Count", aliases: ["ABC", "Abs Basophils", "Absolute Basophils", "Absolute Basophil", "Absolute Leukocyte Count Basophils", "Absolute Leucocyte Count Basophils"], category: "hematology", loincCode: "704-7", normalUnit: "cells/µL", description: "Absolute basophil count" },
+  { canonicalName: "Neutrophil-Lymphocyte Ratio", aliases: ["NLR", "Neutrophil Lymphocyte Ratio", "Neutrophil/Lymphocyte Ratio", "Neutrophil lymphocyte ratio (NLR)"], category: "hematology", normalUnit: "ratio", description: "Ratio of neutrophils to lymphocytes" },
   { canonicalName: "Ferritin", aliases: ["Serum Ferritin"], category: "hematology", loincCode: "2276-4", normalUnit: "ng/mL", description: "Serum ferritin" },
   // Thyroid
   { canonicalName: "TSH", aliases: ["Thyroid Stimulating Hormone", "Ultra TSH", "TSH Ultrasensitive"], category: "thyroid", loincCode: "3016-3", normalUnit: "µIU/mL", description: "Thyroid stimulating hormone" },
@@ -69,6 +86,9 @@ export const OBSERVATION_TYPE_SEEDS: ObservationTypeSeed[] = [
   { canonicalName: "Vitamin D", aliases: ["25-OH Vitamin D", "Vitamin D3", "25 Hydroxy Vitamin D", "Vit D", "25(OH)D"], category: "vitamin", loincCode: "62292-8", normalUnit: "ng/mL", description: "25-hydroxy vitamin D" },
   { canonicalName: "Vitamin B12", aliases: ["B12", "Cobalamin", "Vit B12"], category: "vitamin", loincCode: "2132-9", normalUnit: "pg/mL", description: "Vitamin B12" },
   { canonicalName: "Folate", aliases: ["Folic Acid", "Serum Folate"], category: "vitamin", loincCode: "2284-8", normalUnit: "ng/mL", description: "Serum folate" },
+  // Other chemistry
+  { canonicalName: "Amylase", aliases: ["Serum Amylase", "Amylase Serum"], category: "other", loincCode: "1798-8", normalUnit: "U/L", description: "Serum amylase" },
+  { canonicalName: "Lipase", aliases: ["Serum Lipase", "Lipase Serum"], category: "other", loincCode: "3040-3", normalUnit: "U/L", description: "Serum lipase" },
   // Body
   { canonicalName: "Weight", aliases: ["Body Weight", "Wt"], category: "body", loincCode: "29463-7", normalUnit: "kg", description: "Body weight" },
   { canonicalName: "Height", aliases: ["Body Height", "Ht"], category: "body", loincCode: "8302-2", normalUnit: "cm", description: "Body height" },

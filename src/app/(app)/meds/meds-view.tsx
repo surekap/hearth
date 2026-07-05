@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Pill, Plus } from "lucide-react";
+import { Check, Loader2, Pill, Plus, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -75,6 +78,9 @@ export function MedsView({
   const router = useRouter();
   const [logging, setLogging] = useState<string | null>(null);
   const [justLogged, setJustLogged] = useState<string | null>(null);
+  const [pendingQuickLog, setPendingQuickLog] = useState<Recent | null>(null);
+  const [pendingUndo, setPendingUndo] = useState<Event | null>(null);
+  const [undoing, setUndoing] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -115,6 +121,7 @@ export function MedsView({
         }),
       });
       if (res.ok) {
+        setPendingQuickLog(null);
         setJustLogged(r.nameText);
         setTimeout(() => setJustLogged(null), 2000);
         router.refresh();
@@ -149,6 +156,21 @@ export function MedsView({
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function undoTaken(event: Event) {
+    setUndoing(event.id);
+    try {
+      const res = await fetch(`/api/medications/events/${event.id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setPendingUndo(null);
+        router.refresh();
+      }
+    } finally {
+      setUndoing(null);
     }
   }
 
@@ -265,7 +287,7 @@ export function MedsView({
               {recents.map((r) => (
                 <button
                   key={r.nameText}
-                  onClick={() => quickLog(r)}
+                  onClick={() => setPendingQuickLog(r)}
                   disabled={logging !== null}
                   className={cn(
                     "flex min-h-10 items-center gap-2 rounded-lg border px-3.5 py-2 text-sm shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-primary/5",
@@ -288,6 +310,65 @@ export function MedsView({
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={pendingQuickLog !== null}
+        onOpenChange={(open) => !open && setPendingQuickLog(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark as taken?</DialogTitle>
+            <DialogDescription>
+              This will log a taken dose for {pendingQuickLog?.nameText}
+              {pendingQuickLog?.dose ? `, ${pendingQuickLog.dose}` : ""}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={logging !== null}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              onClick={() => pendingQuickLog && quickLog(pendingQuickLog)}
+              disabled={logging !== null}
+            >
+              {logging !== null && <Loader2 className="size-4 animate-spin" />}
+              Mark taken
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingUndo !== null}
+        onOpenChange={(open) => !open && setPendingUndo(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Undo taken dose?</DialogTitle>
+            <DialogDescription>
+              This will remove the taken entry for {pendingUndo?.nameText}
+              {pendingUndo?.dose ? `, ${pendingUndo.dose}` : ""}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={undoing !== null}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => pendingUndo && undoTaken(pendingUndo)}
+              disabled={undoing !== null}
+            >
+              {undoing !== null && <Loader2 className="size-4 animate-spin" />}
+              Undo taken
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* History */}
       <Card>
@@ -323,9 +404,26 @@ export function MedsView({
                     {e.frequency ? ` · ${e.frequency}` : ""}
                   </p>
                 </div>
-                <Badge className={EVENT_TONE[e.eventType]} variant="secondary">
-                  {EVENT_LABEL[e.eventType]}
-                </Badge>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Badge className={EVENT_TONE[e.eventType]} variant="secondary">
+                    {EVENT_LABEL[e.eventType]}
+                  </Badge>
+                  {e.eventType === "intake_logged" && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setPendingUndo(e)}
+                      disabled={undoing !== null}
+                      aria-label={`Undo taken dose for ${e.nameText}`}
+                    >
+                      {undoing === e.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="size-3.5" />
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
             ))
           )}

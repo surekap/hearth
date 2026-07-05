@@ -98,6 +98,8 @@ export async function POST(req: NextRequest) {
       detail: {
         model,
         observations: context.observations.length,
+        healthRollups: context.healthRollups.length,
+        healthEvents: context.healthEvents.length,
         snippets: context.documentSnippets?.length ?? 0,
         datapointsCaptured: storedDatapoints.length,
       },
@@ -113,6 +115,8 @@ export async function POST(req: NextRequest) {
       meta: {
         model,
         observationCount: context.observations.length,
+        healthRollupCount: context.healthRollups.length,
+        healthEventCount: context.healthEvents.length,
         reportCount: context.reports.length,
         snippetCount: context.documentSnippets?.length ?? 0,
         timeRange: context.timeRange,

@@ -2,7 +2,7 @@ import { db, schema } from "@/db";
 
 export type ObservationTypeRow = typeof schema.observationTypes.$inferSelect;
 
-function normalize(name: string): string {
+export function normalizeObservationName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
@@ -14,8 +14,8 @@ export async function buildCanonicalMap(): Promise<Map<string, ObservationTypeRo
   const types = await db.select().from(schema.observationTypes);
   const map = new Map<string, ObservationTypeRow>();
   for (const t of types) {
-    map.set(normalize(t.canonicalName), t);
-    for (const alias of t.aliases) map.set(normalize(alias), t);
+    map.set(normalizeObservationName(t.canonicalName), t);
+    for (const alias of t.aliases) map.set(normalizeObservationName(alias), t);
   }
   return map;
 }
@@ -26,7 +26,7 @@ export function resolveObservationType(
 ): ObservationTypeRow | null {
   for (const c of candidates) {
     if (!c) continue;
-    const hit = map.get(normalize(c));
+    const hit = map.get(normalizeObservationName(c));
     if (hit) return hit;
   }
   return null;

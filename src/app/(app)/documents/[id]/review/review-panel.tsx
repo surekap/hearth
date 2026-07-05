@@ -75,11 +75,21 @@ export function ReviewPanel({
   const [saving, setSaving] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [createMissingObservationTypes, setCreateMissingObservationTypes] = useState(false);
 
   const draftItems = items.filter((i) => i.status === "draft");
   const labItems = draftItems.filter((i) => i.itemType === "lab_observation");
   const otherItems = draftItems.filter((i) => i.itemType !== "lab_observation");
   const acceptedCount = items.filter((i) => i.status === "accepted").length;
+  const acceptedGeneticsOnly =
+    acceptedCount > 0 &&
+    items
+      .filter((i) => i.status === "accepted")
+      .every((i) =>
+        ["genetic_variant", "genetic_risk", "genetic_trait", "pharmacogenomic_result"].includes(
+          i.itemType
+        )
+      );
 
   const typeByName = useMemo(() => {
     const m = new Map<string, ObsType>();
@@ -122,6 +132,10 @@ export function ReviewPanel({
     });
   }
 
+  const acceptedUnmappedLabCount = labItems.filter(
+    (i) => decisions[i.id] === "accept" && !mappedTypeId(i)
+  ).length;
+
   async function reprocess() {
     setReprocessing(true);
     setMessage(null);
@@ -155,24 +169,37 @@ export function ReviewPanel({
       const acceptItemIds = draftItems
         .filter((i) => decisions[i.id] === "accept")
         .map((i) => i.id);
+      const acceptedDrafts = draftItems.filter((i) => decisions[i.id] === "accept");
       const rejectItemIds = draftItems
         .filter((i) => decisions[i.id] === "reject")
         .map((i) => i.id);
       const res = await fetch(`/api/extractions/${job.id}/accept`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acceptItemIds, rejectItemIds }),
+        body: JSON.stringify({
+          acceptItemIds,
+          rejectItemIds,
+          createMissingObservationTypes,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Save failed");
 
       if (data.unmapped?.length) {
+        const createdCount = data.createdObservationTypes?.length ?? 0;
         setMessage(
-          `Confirmed ${data.accepted} values. Unmapped tests kept as drafts: ${data.unmapped.join(", ")} — map them to a canonical test and save again.`
+          `Confirmed ${data.accepted} values${createdCount ? ` and created ${createdCount} canonical tests` : ""}. Unmapped tests kept as drafts: ${data.unmapped.join(", ")} — map them to a canonical test and save again.`
         );
         router.refresh();
       } else {
-        router.push("/labs?confirmed=" + data.accepted);
+        const geneticsOnly =
+          acceptedDrafts.length > 0 &&
+          acceptedDrafts.every((i) =>
+            ["genetic_variant", "genetic_risk", "genetic_trait", "pharmacogenomic_result"].includes(
+              i.itemType
+            )
+          );
+        router.push(`${geneticsOnly ? "/genetics" : "/labs"}?confirmed=${data.accepted}`);
       }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Save failed");
@@ -212,6 +239,22 @@ export function ReviewPanel({
         <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           {message}
         </p>
+      )}
+
+      {acceptedUnmappedLabCount > 0 && (
+        <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4"
+            checked={createMissingObservationTypes}
+            disabled={saving}
+            onChange={(e) => setCreateMissingObservationTypes(e.target.checked)}
+          />
+          <span>
+            Create canonical tests for {acceptedUnmappedLabCount} accepted unmapped lab row
+            {acceptedUnmappedLabCount === 1 ? "" : "s"}.
+          </span>
+        </label>
       )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
@@ -264,13 +307,17 @@ export function ReviewPanel({
               <CardContent className="py-6 text-sm text-muted-foreground">
                 ✅ {acceptedCount} item{acceptedCount === 1 ? "" : "s"} confirmed from this
                 document. View them in{" "}
-                <a className="underline" href="/labs">
-                  Labs
+                <a className="underline" href={acceptedGeneticsOnly ? "/genetics" : "/labs"}>
+                  {acceptedGeneticsOnly ? "Genetics" : "Labs"}
                 </a>{" "}
-                and the{" "}
-                <a className="underline" href="/dashboard">
-                  Dashboard
-                </a>
+                {!acceptedGeneticsOnly && (
+                  <>
+                    and the{" "}
+                    <a className="underline" href="/dashboard">
+                      Dashboard
+                    </a>
+                  </>
+                )}
                 .
               </CardContent>
             </Card>
@@ -370,8 +417,9 @@ export function ReviewPanel({
 
                       {!typeId && (
                         <p className="mt-1 text-xs text-amber-700">
-                          Not mapped to a canonical test — pick one below or it will stay a
-                          draft.
+                          {createMissingObservationTypes && decision === "accept"
+                            ? "Will create a canonical test when saved."
+                            : "Not mapped to a canonical test — pick one below or it will stay a draft."}
                         </p>
                       )}
 
@@ -471,10 +519,18 @@ export function ReviewPanel({
                 {otherItems.map((item) => {
                   const decision = decisions[item.id];
                   const raw = item.rawJson;
-                  const title =
-                    item.itemType === "medication"
-                      ? `${raw.brand_name ?? raw.generic_name ?? "Medication"} ${raw.strength ?? ""}`
-                      : `${raw.modality ?? "Report"} — ${raw.impression ?? raw.summary ?? ""}`;
+                  let title: string;
+                  if (item.itemType === "medication") {
+                    title = `${raw.brand_name ?? raw.generic_name ?? "Medication"} ${raw.strength ?? ""}`;
+                  } else if (item.itemType === "genetic_variant") {
+                    title = `${raw.gene ?? raw.variant_id ?? "Variant"} ${raw.genotype ?? ""}`;
+                  } else if (item.itemType === "genetic_risk" || item.itemType === "genetic_trait") {
+                    title = `${raw.condition_name ?? "Genetic risk"} — ${raw.assessment ?? raw.risk_level ?? ""}`;
+                  } else if (item.itemType === "pharmacogenomic_result") {
+                    title = `${raw.drug_name ?? "Medication"} — ${raw.implication ?? ""}`;
+                  } else {
+                    title = `${raw.modality ?? "Report"} — ${raw.impression ?? raw.summary ?? ""}`;
+                  }
                   return (
                     <div
                       key={item.id}

@@ -21,8 +21,10 @@ You receive a single medical document (lab report, prescription, imaging/special
 
 Rules:
 - Extract ONLY what is printed. Never invent values, units or reference ranges.
-- Transcribe every test result you can find, including sub-panels.
+- Inspect every page of multi-page PDFs. Do not stop at the first page or the visible preview.
+- Transcribe every test result you can find, including sub-panels and repeated table continuations.
 - canonical_name: map local names to international standard names (SGPT→ALT, SGOT→AST, "Glycosylated Hb"→HbA1c). Null if unsure.
+- For allergy/specific-IgE panels, every allergen row is a separate lab observation. Keep test_name as printed; use canonical_name "<Allergen> IgE" for allergen-specific IgE rows where the printed name omits IgE.
 - Numeric results go in "value"; qualitative results ("Positive", "Trace") go in "value_text".
 - Reference ranges: parse "0-45", "< 150", "> 40" into reference_low / reference_high, leaving the missing side null.
 - interpretation: judge from the printed value vs printed range (or printed H/L flags). "unknown" if no range.
@@ -64,6 +66,7 @@ export async function extractWithOpenAI(input: {
   const response = await client.responses.create({
     model,
     instructions: SYSTEM_PROMPT,
+    max_output_tokens: 16000,
     input: [
       {
         role: "user",

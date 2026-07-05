@@ -35,9 +35,8 @@ export async function putObject(key: string, data: Buffer): Promise<string> {
   if (shouldUseBlob()) {
     const { put } = await import("@vercel/blob");
     const blob = await put(key, data, {
-      // Payload is encrypted and the URL is unguessable; access still goes
-      // through the authenticated /api/documents/:id/file endpoint.
-      access: "public",
+      // Payload is encrypted and only read back through authenticated API routes.
+      access: "private",
       contentType: "application/octet-stream",
       addRandomSuffix: true,
     });
@@ -52,9 +51,13 @@ export async function putObject(key: string, data: Buffer): Promise<string> {
 
 export async function getObject(storedKey: string): Promise<Buffer> {
   if (storedKey.startsWith("http")) {
-    const res = await fetch(storedKey);
-    if (!res.ok) throw new Error(`Blob fetch failed: ${res.status}`);
-    return Buffer.from(await res.arrayBuffer());
+    const { get } = await import("@vercel/blob");
+    const blob = await get(storedKey, { access: "private" });
+    if (!blob) throw new Error("Blob fetch failed: not found");
+    if (blob.statusCode !== 200 || !blob.stream) {
+      throw new Error(`Blob fetch failed: ${blob.statusCode}`);
+    }
+    return Buffer.from(await new Response(blob.stream).arrayBuffer());
   }
   assertLocalDiskAllowed();
   return readFile(path.join(LOCAL_DIR, storedKey));

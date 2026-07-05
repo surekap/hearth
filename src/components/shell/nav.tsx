@@ -9,6 +9,8 @@ import {
   MessageCircleQuestion,
   Clock,
   Upload,
+  Pill,
+  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,9 +18,11 @@ const items = [
   { href: "/", label: "Timeline", icon: Clock },
   { href: "/dashboard", label: "Dashboard", icon: Activity },
   { href: "/labs", label: "Labs", icon: FlaskConical },
+  { href: "/meds", label: "Meds", icon: Pill },
   { href: "/documents", label: "Documents", icon: FileText },
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/ask", label: "Ask AI", icon: MessageCircleQuestion },
+  { href: "/export", label: "Export", icon: Download },
 ];
 
 export function MainNav() {

@@ -8,6 +8,7 @@ import {
   resolveObservationType,
   computeInterpretation,
 } from "@/lib/extraction/canonical";
+import { recordMedicationEvent, upsertMedicationMaster } from "@/lib/medications";
 
 const bodySchema = z.object({
   acceptItemIds: z.array(z.string().uuid()),
@@ -134,9 +135,39 @@ export async function POST(
           impression: (raw.impression as string) ?? null,
           followUpRecommended: !!raw.follow_up_recommended,
         });
+      } else if (item.itemType === "medication") {
+        const raw = item.rawJson as {
+          brand_name?: string | null;
+          generic_name?: string | null;
+          strength?: string | null;
+          dose?: string | null;
+          frequency?: string | null;
+          report_date?: string | null;
+        };
+        const name = raw.brand_name ?? raw.generic_name;
+        if (name) {
+          const master = await upsertMedicationMaster({
+            brandName: raw.brand_name,
+            genericName: raw.generic_name,
+            strength: raw.strength,
+            source: "prescription",
+          });
+          await recordMedicationEvent({
+            profileId: job.profileId,
+            nameText: name,
+            dose: raw.dose ?? raw.strength,
+            frequency: raw.frequency,
+            eventType: "prescribed",
+            eventTime: raw.report_date
+              ? new Date(raw.report_date)
+              : doc.documentDate
+                ? new Date(doc.documentDate)
+                : doc.uploadedAt,
+            documentId: doc.id,
+            medicationMasterId: master?.id ?? null,
+          });
+        }
       }
-      // medication items are stored as accepted extracted_items for now;
-      // full medication logging is a later milestone.
 
       await db
         .update(schema.extractedItems)

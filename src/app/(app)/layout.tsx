@@ -14,14 +14,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { profile, profiles } = await getActiveProfile(session.user.id);
 
   return (
-    <div className="min-h-svh bg-muted/30">
+    <div className="min-h-svh">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 pt-3">
-          <Link href="/" className="flex items-center gap-2 font-semibold">
-            <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-sm text-primary-foreground">
+          <Link href="/" className="flex items-center gap-2">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-sm text-primary-foreground shadow-sm shadow-primary/30">
               ♥
             </span>
-            Hearth
+            <span className="font-display text-lg">Hearth</span>
           </Link>
           <div className="flex items-center gap-2">
             <ProfileSwitcher

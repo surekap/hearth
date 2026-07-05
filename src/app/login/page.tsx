@@ -4,13 +4,6 @@ import { signIn } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 export default async function LoginPage({
   searchParams,
@@ -36,16 +29,28 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="flex min-h-svh items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-2xl bg-primary text-2xl text-primary-foreground">
+    <main className="relative flex min-h-svh items-center justify-center overflow-hidden p-4">
+      {/* warm hearth glow */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(52rem 32rem at 50% 110%, oklch(0.54 0.14 40 / 14%), transparent 65%), radial-gradient(40rem 24rem at 85% -10%, oklch(0.65 0.13 80 / 10%), transparent 60%)",
+        }}
+      />
+      <div className="relative w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary text-2xl text-primary-foreground shadow-lg shadow-primary/25">
             ♥
           </div>
-          <CardTitle className="text-2xl">Hearth</CardTitle>
-          <CardDescription>Your family&apos;s private health record</CardDescription>
-        </CardHeader>
-        <CardContent>
+          <h1 className="font-display text-4xl">Hearth</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Your family&apos;s health, kept close.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border bg-card p-6 shadow-sm">
           <form action={login} className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
@@ -75,8 +80,12 @@ export default async function LoginPage({
               Sign in
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          Encrypted documents · per-profile isolation · you hold the keys
+        </p>
+      </div>
     </main>
   );
 }

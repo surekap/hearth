@@ -1,0 +1,326 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Check, Loader2, Pill, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+
+type Recent = {
+  nameText: string;
+  dose: string | null;
+  frequency: string | null;
+  lastUsedAt: string;
+  useCount: number;
+};
+
+type Event = {
+  id: string;
+  nameText: string;
+  dose: string | null;
+  frequency: string | null;
+  eventType: string;
+  eventTime: string;
+  notes: string | null;
+};
+
+type SearchResult = {
+  id: string;
+  name: string;
+  strength: string | null;
+  form: string;
+};
+
+const EVENT_LABEL: Record<string, string> = {
+  prescribed: "prescribed",
+  started: "started",
+  stopped: "stopped",
+  intake_logged: "taken",
+  skipped: "skipped",
+  dose_changed: "dose changed",
+};
+
+const EVENT_TONE: Record<string, string> = {
+  prescribed: "bg-blue-100 text-blue-800",
+  started: "bg-emerald-100 text-emerald-800",
+  stopped: "bg-red-100 text-red-800",
+  intake_logged: "bg-secondary text-secondary-foreground",
+  skipped: "bg-amber-100 text-amber-800",
+  dose_changed: "bg-violet-100 text-violet-800",
+};
+
+export function MedsView({
+  profileId,
+  profileName,
+  recents,
+  events,
+}: {
+  profileId: string;
+  profileName: string;
+  recents: Recent[];
+  events: Event[];
+}) {
+  const router = useRouter();
+  const [logging, setLogging] = useState<string | null>(null);
+  const [justLogged, setJustLogged] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Manual add form
+  const [name, setName] = useState("");
+  const [dose, setDose] = useState("");
+  const [frequency, setFrequency] = useState("");
+  const [eventType, setEventType] = useState("started");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (name.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    searchTimer.current = setTimeout(async () => {
+      const res = await fetch(`/api/medications/search?q=${encodeURIComponent(name)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setResults(data.results);
+      }
+    }, 250);
+  }, [name]);
+
+  async function quickLog(r: Recent) {
+    setLogging(r.nameText);
+    try {
+      const res = await fetch("/api/medications/log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profileId,
+          nameText: r.nameText,
+          dose: r.dose,
+          frequency: r.frequency,
+          eventType: "intake_logged",
+        }),
+      });
+      if (res.ok) {
+        setJustLogged(r.nameText);
+        setTimeout(() => setJustLogged(null), 2000);
+        router.refresh();
+      }
+    } finally {
+      setLogging(null);
+    }
+  }
+
+  async function addMedication() {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/medications/log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profileId,
+          nameText: name.trim(),
+          dose: dose || null,
+          frequency: frequency || null,
+          eventType,
+          addToDictionary: true,
+        }),
+      });
+      if (res.ok) {
+        setAddOpen(false);
+        setName("");
+        setDose("");
+        setFrequency("");
+        router.refresh();
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-2xl">Medications</h1>
+          <p className="text-sm text-muted-foreground">
+            {profileName}&apos;s medicines — one tap to log a dose
+          </p>
+        </div>
+        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="size-4" />
+              Add medicine
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add a medicine</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="relative grid gap-1.5">
+                <Label>Name</Label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Search or type a name…"
+                  autoFocus
+                />
+                {results.length > 0 && (
+                  <div className="absolute top-full z-10 mt-1 w-full rounded-md border bg-popover shadow-md">
+                    {results.map((r) => (
+                      <button
+                        key={r.id}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+                        onClick={() => {
+                          setName(r.name);
+                          if (r.strength) setDose(r.strength);
+                          setResults([]);
+                        }}
+                      >
+                        <Pill className="size-3.5 text-muted-foreground" />
+                        {r.name}
+                        {r.strength && (
+                          <span className="text-xs text-muted-foreground">{r.strength}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label>Dose</Label>
+                  <Input
+                    value={dose}
+                    onChange={(e) => setDose(e.target.value)}
+                    placeholder="500 mg"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Frequency</Label>
+                  <Input
+                    value={frequency}
+                    onChange={(e) => setFrequency(e.target.value)}
+                    placeholder="1-0-1 after food"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Event</Label>
+                <select
+                  value={eventType}
+                  onChange={(e) => setEventType(e.target.value)}
+                  className="border-input h-9 rounded-md border bg-transparent px-3 text-sm"
+                >
+                  <option value="started">Started taking</option>
+                  <option value="prescribed">Prescribed</option>
+                  <option value="intake_logged">Took a dose now</option>
+                </select>
+              </div>
+              <Button onClick={addMedication} disabled={saving || !name.trim()}>
+                {saving && <Loader2 className="size-4 animate-spin" />}
+                Save
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Quick log */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Quick log</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No recent medicines. Add one manually or accept a prescription from the review
+              screen — each medicine becomes one-tap loggable here.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {recents.map((r) => (
+                <button
+                  key={r.nameText}
+                  onClick={() => quickLog(r)}
+                  disabled={logging !== null}
+                  className={cn(
+                    "flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm transition-all hover:border-primary hover:bg-primary/5",
+                    justLogged === r.nameText && "border-emerald-500 bg-emerald-50"
+                  )}
+                >
+                  {logging === r.nameText ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : justLogged === r.nameText ? (
+                    <Check className="size-3.5 text-emerald-600" />
+                  ) : (
+                    <Pill className="size-3.5 text-primary" />
+                  )}
+                  <span className="font-medium">{r.nameText}</span>
+                  {r.dose && <span className="text-xs text-muted-foreground">{r.dose}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">History</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-1.5">
+          {events.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No medication events yet.</p>
+          ) : (
+            events.map((e) => (
+              <div key={e.id} className="flex items-center gap-3 rounded-lg border p-2.5">
+                <Pill className="size-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">
+                    {e.nameText}
+                    {e.dose ? (
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                        {e.dose}
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(e.eventTime).toLocaleString("en-IN", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                    {e.frequency ? ` · ${e.frequency}` : ""}
+                  </p>
+                </div>
+                <Badge className={EVENT_TONE[e.eventType]} variant="secondary">
+                  {EVENT_LABEL[e.eventType]}
+                </Badge>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

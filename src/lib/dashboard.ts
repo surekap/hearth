@@ -46,7 +46,7 @@ export type MetricCard = {
 export type DashboardMarker = {
   date: string;
   label: string;
-  kind: "report" | "prescription" | "document";
+  kind: "report" | "prescription" | "document" | "medication";
 };
 
 function trendOf(points: MetricPoint[]): "rising" | "falling" | "flat" | null {
@@ -149,8 +149,26 @@ export async function getMetabolicLiverData(profileId: string, range: DashboardR
             ? "Imaging"
             : "Specialist report",
       kind: d.documentType === "prescription" ? ("prescription" as const) : ("report" as const),
-    }))
-    .filter((m) => !start || new Date(m.date) >= start);
+    }));
 
-  return { range, cards, derived, markers };
+  // Medication started/stopped markers (spec §12 timeline overlays)
+  const medEvents = await db.query.medicationEvents.findMany({
+    where: eq(schema.medicationEvents.profileId, profileId),
+    orderBy: [asc(schema.medicationEvents.eventTime)],
+  });
+  for (const m of medEvents) {
+    if (m.eventType === "started" || m.eventType === "stopped" || m.eventType === "prescribed") {
+      markers.push({
+        date: m.eventTime.toISOString(),
+        label: `${m.nameText} ${m.eventType}`,
+        kind: "medication",
+      });
+    }
+  }
+
+  const filteredMarkers = markers
+    .filter((m) => !start || new Date(m.date) >= start)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return { range, cards, derived, markers: filteredMarkers };
 }

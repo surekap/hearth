@@ -114,6 +114,25 @@ export const observationStatusEnum = pgEnum("observation_status", [
   "rejected",
 ]);
 
+export const medicationFormEnum = pgEnum("medication_form", [
+  "tablet",
+  "capsule",
+  "injection",
+  "syrup",
+  "topical",
+  "inhaler",
+  "other",
+]);
+
+export const medicationEventTypeEnum = pgEnum("medication_event_type", [
+  "prescribed",
+  "started",
+  "stopped",
+  "intake_logged",
+  "skipped",
+  "dose_changed",
+]);
+
 export const clinicalReportTypeEnum = pgEnum("clinical_report_type", [
   "imaging",
   "specialist",
@@ -129,6 +148,8 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
+  // Bearer token for the iOS Shortcut upload API (Phase 1.5).
+  apiToken: text("api_token").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
 });
@@ -300,6 +321,59 @@ export const clinicalReports = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("clinical_reports_profile_idx").on(t.profileId)]
+);
+
+export const medicationMaster = pgTable("medication_master", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  genericName: text("generic_name"),
+  brandName: text("brand_name"),
+  manufacturer: text("manufacturer"),
+  form: medicationFormEnum("form").notNull().default("other"),
+  strength: text("strength"),
+  source: text("source").notNull().default("manual"), // manual | prescription | imported
+  country: text("country").notNull().default("IN"),
+  aliases: text("aliases").array().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const medicationEvents = pgTable(
+  "medication_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    medicationMasterId: uuid("medication_master_id").references(() => medicationMaster.id),
+    nameText: text("name_text").notNull(),
+    dose: text("dose"),
+    route: text("route"),
+    frequency: text("frequency"),
+    eventType: medicationEventTypeEnum("event_type").notNull().default("intake_logged"),
+    eventTime: timestamp("event_time", { withTimezone: true }).notNull().defaultNow(),
+    documentId: uuid("document_id").references(() => documents.id, { onDelete: "set null" }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("medication_events_profile_idx").on(t.profileId),
+    index("medication_events_profile_time_idx").on(t.profileId, t.eventTime),
+  ]
+);
+
+export const recentMedications = pgTable(
+  "recent_medications",
+  {
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    medicationMasterId: uuid("medication_master_id").references(() => medicationMaster.id),
+    nameText: text("name_text").notNull(),
+    dose: text("dose"),
+    frequency: text("frequency"),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+    useCount: integer("use_count").notNull().default(1),
+  },
+  (t) => [uniqueIndex("recent_medications_profile_name_idx").on(t.profileId, t.nameText)]
 );
 
 export const aiContextLogs = pgTable(

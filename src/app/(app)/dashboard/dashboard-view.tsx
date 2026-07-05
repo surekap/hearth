@@ -247,7 +247,7 @@ export function DashboardView({
           <CardContent className="grid gap-1.5">
             {data.markers.map((m, i) => (
               <div key={i} className="flex items-center gap-2 text-sm">
-                {m.kind === "prescription" ? (
+                {m.kind === "prescription" || m.kind === "medication" ? (
                   <Pill className="size-4 text-muted-foreground" />
                 ) : (
                   <Stethoscope className="size-4 text-muted-foreground" />

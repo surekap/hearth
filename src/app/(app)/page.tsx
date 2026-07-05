@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { desc, eq, and } from "drizzle-orm";
-import { FileText, FlaskConical, Stethoscope, Upload } from "lucide-react";
+import { FileText, FlaskConical, Pill, Stethoscope, Upload } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/active-profile";
 import { db, schema } from "@/db";
@@ -11,11 +11,11 @@ import { Card, CardContent } from "@/components/ui/card";
 
 type TimelineEvent = {
   date: Date;
-  kind: "document" | "labs" | "report" | "manual";
+  kind: "document" | "labs" | "report" | "manual" | "med";
   title: string;
   detail: string;
   href: string;
-  badge?: { label: string; tone: "red" | "amber" | "green" | "muted" };
+  badge?: { label: string; tone: "red" | "amber" | "green" | "blue" | "muted" };
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -34,7 +34,7 @@ export default async function TimelinePage() {
   const { profile } = await getActiveProfile(session.user.id);
   if (!profile) redirect("/profiles");
 
-  const [docs, observations, reports] = await Promise.all([
+  const [docs, observations, reports, medEvents] = await Promise.all([
     db.query.documents.findMany({
       where: eq(schema.documents.profileId, profile.id),
       orderBy: [desc(schema.documents.uploadedAt)],
@@ -69,6 +69,11 @@ export default async function TimelinePage() {
       where: eq(schema.clinicalReports.profileId, profile.id),
       orderBy: [desc(schema.clinicalReports.createdAt)],
       limit: 100,
+    }),
+    db.query.medicationEvents.findMany({
+      where: eq(schema.medicationEvents.profileId, profile.id),
+      orderBy: [desc(schema.medicationEvents.eventTime)],
+      limit: 200,
     }),
   ]);
 
@@ -149,6 +154,26 @@ export default async function TimelinePage() {
     });
   }
 
+  // Medication events (spec §12: medication started/stopped are timeline markers).
+  // Routine intake logs are omitted to keep the timeline readable.
+  const MED_LABEL: Record<string, string> = {
+    prescribed: "prescribed",
+    started: "started",
+    stopped: "stopped",
+    dose_changed: "dose changed",
+  };
+  for (const m of medEvents) {
+    if (!(m.eventType in MED_LABEL)) continue;
+    events.push({
+      date: m.eventTime,
+      kind: "med",
+      title: `${m.nameText} ${MED_LABEL[m.eventType]}`,
+      detail: [m.dose, m.frequency].filter(Boolean).join(" · "),
+      href: "/meds",
+      badge: { label: MED_LABEL[m.eventType], tone: "blue" },
+    });
+  }
+
   events.sort((a, b) => b.date.getTime() - a.date.getTime());
 
   // Group by month
@@ -165,12 +190,14 @@ export default async function TimelinePage() {
     labs: FlaskConical,
     report: Stethoscope,
     manual: FlaskConical,
+    med: Pill,
   } as const;
 
   const TONE = {
     red: "bg-red-100 text-red-800",
     amber: "bg-amber-100 text-amber-800",
     green: "bg-emerald-100 text-emerald-800",
+    blue: "bg-blue-100 text-blue-800",
     muted: "bg-muted text-muted-foreground",
   } as const;
 

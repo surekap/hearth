@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
+import { scheduleInsightRefresh } from "@/lib/ai/insights";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
@@ -206,6 +208,11 @@ export async function POST(
       targetId: job.id,
       detail: { accepted: accepted.length, rejected: body.rejectItemIds.length, unmapped },
     });
+
+    // New confirmed data → refresh the pre-computed insights after responding.
+    if (accepted.length > 0) {
+      after(() => scheduleInsightRefresh(job.profileId));
+    }
 
     return NextResponse.json({
       accepted: accepted.length,

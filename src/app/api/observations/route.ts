@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
+import { scheduleInsightRefresh } from "@/lib/ai/insights";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { requireUser, requireProfile, handleApiError, ApiError } from "@/lib/api";
@@ -77,6 +79,8 @@ export async function POST(req: NextRequest) {
         status: "confirmed",
       })
       .returning();
+
+    after(() => scheduleInsightRefresh(body.profileId));
 
     return NextResponse.json({ observation: row }, { status: 201 });
   } catch (e) {

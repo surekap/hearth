@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { extractionModel } from "@/lib/ai/models";
 import {
   extractionResultSchema,
   OPENAI_JSON_SCHEMA,
@@ -37,7 +38,7 @@ export async function extractWithOpenAI(input: {
   filename: string;
 }): Promise<ProviderOutput> {
   const client = new OpenAI();
-  const model = process.env.OPENAI_MODEL ?? "gpt-4o";
+  const model = extractionModel();
 
   const base64 = input.buffer.toString("base64");
   const filePart =

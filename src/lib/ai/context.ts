@@ -26,6 +26,16 @@ export type AiContext = {
     summary: string | null;
     impression: string | null;
   }>;
+  /** Self-reported in past AI conversations — history-taking notes, not lab facts. */
+  patientReported: Array<{
+    kind: string;
+    label: string;
+    detail: string | null;
+    severity: string | null;
+    notedAt: string;
+  }>;
+  /** Keyword-matched excerpts of original report text, when relevant. */
+  documentSnippets?: Array<{ document: string; date: string | null; snippet: string }>;
   timeRange: { from: string | null; to: string | null };
 };
 
@@ -74,6 +84,12 @@ export async function buildAiContext(
     limit: 50,
   });
 
+  const reported = await db.query.conversationDatapoints.findMany({
+    where: eq(schema.conversationDatapoints.profileId, profileId),
+    orderBy: (d, { desc }) => [desc(d.notedAt)],
+    limit: 30,
+  });
+
   const ageYears = profile.dateOfBirth
     ? Math.floor(
         (Date.now() - new Date(profile.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000)
@@ -102,6 +118,13 @@ export async function buildAiContext(
       specialty: r.specialty,
       summary: r.summary,
       impression: r.impression,
+    })),
+    patientReported: reported.map((d) => ({
+      kind: d.kind,
+      label: d.label,
+      detail: d.detail,
+      severity: d.severity,
+      notedAt: d.notedAt.toISOString().slice(0, 10),
     })),
     timeRange: {
       from: rows[0]?.observedAt.toISOString().slice(0, 10) ?? null,

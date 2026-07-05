@@ -18,8 +18,19 @@ AI Q&A, medication logging, and JSON / FHIR / doctor-friendly PDF export.
 - **Extraction**: OpenAI Responses API (PDF/image input, strict JSON schema) when
   `OPENAI_API_KEY` is set; deterministic **mock provider** otherwise so the whole flow
   works offline
-- **AI Q&A**: profile-isolated context builder → PII redaction (v1) → LLM →
-  `ai_context_logs` records the exact context packet the model saw
+- **AI layer**: profile-isolated context builder → PII redaction (v1) → answer, with
+  `ai_context_logs` recording the exact context packet used. Three tiers:
+  1. **Rules engine** — trend/latest/abnormal questions are computed straight from
+     confirmed observations (no model call at all)
+  2. **Reasoning model** — everything else, with keyword-matched raw-report snippets
+     added when structured data may not cover the question
+  3. **Pre-computed insights** — a physician-voiced briefing (encouraging when things
+     are good, stern when they're not; never prescribes) generated once per data change
+     (fingerprinted) and always visible on the Ask tab
+  Patient-reported details mentioned in conversation (symptoms, mood, sleep) are
+  extracted into `conversation_datapoints` and fed back into future context.
+  Models are per-task: `EXTRACTION_MODEL` (cheap, high-volume) and `REASONING_MODEL`
+  (capable), both defaulting to `OPENAI_MODEL`.
 
 ## Local development
 

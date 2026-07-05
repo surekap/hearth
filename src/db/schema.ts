@@ -396,6 +396,76 @@ export const aiContextLogs = pgTable(
   (t) => [index("ai_context_logs_profile_idx").on(t.profileId)]
 );
 
+export const insightToneEnum = pgEnum("insight_tone", [
+  "encouraging",
+  "neutral",
+  "warning",
+  "stern",
+]);
+
+/**
+ * Pre-computed, profile-scoped insights shown on the Ask AI tab without the
+ * user asking. Regenerated when confirmed data changes (fingerprinted), so
+ * the reasoning cost is paid once per data change, not per view.
+ */
+export const aiInsights = pgTable(
+  "ai_insights",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    tone: insightToneEnum("tone").notNull().default("neutral"),
+    category: text("category"),
+    model: text("model").notNull(),
+    dataFingerprint: text("data_fingerprint").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ai_insights_profile_idx").on(t.profileId)]
+);
+
+export const datapointKindEnum = pgEnum("datapoint_kind", [
+  "symptom",
+  "mood",
+  "sleep",
+  "lifestyle",
+  "medication_mention",
+  "other",
+]);
+
+export const datapointSeverityEnum = pgEnum("datapoint_severity", [
+  "mild",
+  "moderate",
+  "severe",
+]);
+
+/**
+ * Patient-reported data points captured from AI conversations (symptoms,
+ * mood, sleep, lifestyle). Unverified by documents — kept separate from
+ * observations, but fed back into future AI context.
+ */
+export const conversationDatapoints = pgTable(
+  "conversation_datapoints",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    aiContextLogId: uuid("ai_context_log_id").references(() => aiContextLogs.id, {
+      onDelete: "set null",
+    }),
+    kind: datapointKindEnum("kind").notNull().default("other"),
+    label: text("label").notNull(),
+    detail: text("detail"),
+    severity: datapointSeverityEnum("severity"),
+    notedAt: timestamp("noted_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("conversation_datapoints_profile_idx").on(t.profileId)]
+);
+
 export const auditLogs = pgTable(
   "audit_logs",
   {

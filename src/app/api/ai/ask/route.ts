@@ -5,6 +5,9 @@ import { db, schema } from "@/db";
 import { requireUser, requireProfile, handleApiError, logAudit } from "@/lib/api";
 import { buildAiContext } from "@/lib/ai/context";
 import { answerWithOpenAI, answerWithMock } from "@/lib/ai/answer";
+import { tryRuleAnswer } from "@/lib/ai/rules";
+import { findDocumentSnippets } from "@/lib/ai/snippets";
+import { extractDatapoints, storeDatapoints } from "@/lib/ai/datapoints";
 import { REDACTION_VERSION, redactPII } from "@/lib/ai/redact";
 
 export const runtime = "nodejs";
@@ -51,34 +54,67 @@ export async function POST(req: NextRequest) {
     const context = await buildAiContext(body.profileId, knownNames);
     const question = redactPII(body.question, knownNames);
 
-    const { answer, model } = process.env.OPENAI_API_KEY
-      ? await answerWithOpenAI(question, context)
-      : answerWithMock(question, context);
+    // 1. Rules engine: numeric trend/latest/abnormal questions never hit the LLM.
+    let result = tryRuleAnswer(question, context);
 
-    // Log the exact context packet the model saw.
-    await db.insert(schema.aiContextLogs).values({
-      profileId: body.profileId,
-      userId,
-      question,
-      contextJson: context,
-      redactionVersion: REDACTION_VERSION,
-      model,
-      answer,
-    });
+    // 2. Otherwise: attach raw-text snippets the structured data may not cover,
+    //    then ask the reasoning model.
+    if (!result) {
+      const snippets = await findDocumentSnippets(body.profileId, question, knownNames);
+      if (snippets.length > 0) context.documentSnippets = snippets;
+      result = process.env.OPENAI_API_KEY
+        ? await answerWithOpenAI(question, context)
+        : answerWithMock(question, context);
+    }
+    const { answer, model } = result;
+
+    // Log the exact context packet the model (or rules engine) saw.
+    const [contextLog] = await db
+      .insert(schema.aiContextLogs)
+      .values({
+        profileId: body.profileId,
+        userId,
+        question,
+        contextJson: context,
+        redactionVersion: REDACTION_VERSION,
+        model,
+        answer,
+      })
+      .returning();
+
+    // 3. Capture patient-reported data points from the user's message
+    //    (symptoms, mood, sleep…) so they become part of the record.
+    const captured = await extractDatapoints(body.question);
+    const storedDatapoints = await storeDatapoints(
+      body.profileId,
+      contextLog.id,
+      captured
+    );
 
     await logAudit({
       userId,
       profileId: body.profileId,
       action: "ai_ask",
-      detail: { model, observations: context.observations.length },
+      detail: {
+        model,
+        observations: context.observations.length,
+        snippets: context.documentSnippets?.length ?? 0,
+        datapointsCaptured: storedDatapoints.length,
+      },
     });
 
     return NextResponse.json({
       answer,
+      capturedDatapoints: storedDatapoints.map((d) => ({
+        kind: d.kind,
+        label: d.label,
+        severity: d.severity,
+      })),
       meta: {
         model,
         observationCount: context.observations.length,
         reportCount: context.reports.length,
+        snippetCount: context.documentSnippets?.length ?? 0,
         timeRange: context.timeRange,
         redactionVersion: REDACTION_VERSION,
       },

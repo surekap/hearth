@@ -17,6 +17,20 @@ function shouldUseBlob() {
   return !!process.env.BLOB_READ_WRITE_TOKEN;
 }
 
+/**
+ * Local-disk storage only exists for development. On Vercel the filesystem is
+ * read-only, so falling through to it means Blob isn't configured — fail with
+ * a clear message instead of a confusing ENOENT from mkdir.
+ */
+function assertLocalDiskAllowed() {
+  if (process.env.VERCEL) {
+    throw new Error(
+      "Document storage is not configured: BLOB_READ_WRITE_TOKEN is missing. " +
+        "Connect a Vercel Blob store to this project and redeploy."
+    );
+  }
+}
+
 export async function putObject(key: string, data: Buffer): Promise<string> {
   if (shouldUseBlob()) {
     const { put } = await import("@vercel/blob");
@@ -29,6 +43,7 @@ export async function putObject(key: string, data: Buffer): Promise<string> {
     });
     return blob.url;
   }
+  assertLocalDiskAllowed();
   const filePath = path.join(LOCAL_DIR, key);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, data);
@@ -41,6 +56,7 @@ export async function getObject(storedKey: string): Promise<Buffer> {
     if (!res.ok) throw new Error(`Blob fetch failed: ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   }
+  assertLocalDiskAllowed();
   return readFile(path.join(LOCAL_DIR, storedKey));
 }
 

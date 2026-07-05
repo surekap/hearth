@@ -111,7 +111,7 @@ function MetricChart({ card }: { card: MetricCard }) {
           strokeWidth={2.5}
           dot={{ r: 3, strokeWidth: 2, fill: "var(--card)" }}
           activeDot={{ r: 5 }}
-          isAnimationActive
+          isAnimationActive={card.points.length <= 40}
         />
       </RechartsLineChart>
     </RechartsResponsiveContainer>

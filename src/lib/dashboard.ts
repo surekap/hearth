@@ -73,6 +73,8 @@ const CATEGORY_ORDER = [
   "sleep",
 ];
 
+const MAX_CHART_POINTS_PER_METRIC = 80;
+
 export type DashboardRange = "3m" | "6m" | "1y" | "3y" | "all";
 
 export function rangeStart(range: DashboardRange): Date | null {
@@ -136,7 +138,6 @@ export type AdaptiveDashboardData = {
   range: DashboardRange;
   focus: DashboardFocus[];
   sections: DashboardSection[];
-  allCards: MetricCard[];
   derived: {
     astAltRatio: number | null;
     tgHdlRatio: number | null;
@@ -192,6 +193,15 @@ function trendOf(points: MetricPoint[]): "rising" | "falling" | "flat" | null {
   return "flat";
 }
 
+function downsamplePoints(points: MetricPoint[], maxPoints = MAX_CHART_POINTS_PER_METRIC) {
+  if (points.length <= maxPoints) return points;
+  const step = Math.ceil(points.length / maxPoints);
+  const sampled = points.filter((_, index) => index % step === 0);
+  const latest = points[points.length - 1];
+  if (sampled[sampled.length - 1]?.date !== latest.date) sampled.push(latest);
+  return sampled;
+}
+
 function cardReason(card: MetricCard) {
   if (!card.latest) return null;
   if (card.latest.interpretation === "critical") return "critical";
@@ -241,21 +251,22 @@ function buildCards(rows: ObservationRow[]): MetricCard[] {
 
   const cards = [...byType.values()].map((list) => {
     const latestRow = list[list.length - 1];
-    const points = list.map((r) => ({
+    const allPoints = list.map((r) => ({
       date: r.observedAt.toISOString(),
       value: r.valueNumeric!,
       referenceLow: r.referenceLow,
       referenceHigh: r.referenceHigh,
       interpretation: r.interpretation,
     }));
-    const trend = trendOf(points);
+    const trend = trendOf(allPoints);
+    const points = downsamplePoints(allPoints);
     const card: MetricCard = {
       name: latestRow.typeName,
       category: latestRow.category,
       categoryLabel: categoryLabel(latestRow.category),
       unit: latestRow.unit ?? latestRow.normalUnit,
       points,
-      latest: points[points.length - 1] ?? null,
+      latest: allPoints[allPoints.length - 1] ?? null,
       trend,
       attention: false,
       reason: null,
@@ -554,7 +565,6 @@ export async function getAdaptiveDashboardData(
     range,
     focus,
     sections,
-    allCards: cards,
     derived,
     reportGroups,
     markers,

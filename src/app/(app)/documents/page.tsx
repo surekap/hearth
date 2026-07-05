@@ -8,6 +8,7 @@ import { db, schema } from "@/db";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/mascot";
 
 const TYPE_LABELS: Record<string, string> = {
   lab_report: "Lab report",
@@ -47,10 +48,13 @@ export default async function DocumentsPage() {
 
   return (
     <div className="grid gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Documents</h1>
-          <p className="text-sm text-muted-foreground">
+          <Badge className="mb-2 bg-accent text-accent-foreground" variant="secondary">
+            Library
+          </Badge>
+          <h1 className="text-3xl font-semibold">Documents</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {profile.displayName}&apos;s medical documents
           </p>
         </div>
@@ -64,21 +68,27 @@ export default async function DocumentsPage() {
 
       {docs.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
-            <FileText className="size-10 text-muted-foreground/50" />
-            <p className="text-muted-foreground">No documents yet.</p>
-            <Button asChild variant="outline">
+          <CardContent>
+            <EmptyState
+              mood="calm"
+              title="No documents yet"
+              description="Upload a report, prescription, or image and Hearth will keep it attached to this profile."
+            >
+            <Button asChild>
               <Link href="/upload">Upload the first report</Link>
             </Button>
+            </EmptyState>
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-2">
           {docs.map((d) => (
             <Link key={d.id} href={`/documents/${d.id}/review`}>
-              <Card className="py-3 transition-colors hover:bg-accent/50">
+              <Card className="interactive-card py-3">
                 <CardContent className="flex items-center gap-4 px-4">
-                  <FileText className="size-5 shrink-0 text-muted-foreground" />
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent text-primary">
+                    <FileText className="size-5" />
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{d.originalFilename}</p>
                     <p className="text-xs text-muted-foreground">

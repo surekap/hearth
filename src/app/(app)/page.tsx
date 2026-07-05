@@ -8,6 +8,7 @@ import { db, schema } from "@/db";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/mascot";
 
 type TimelineEvent = {
   date: Date;
@@ -194,42 +195,64 @@ export default async function TimelinePage() {
   } as const;
 
   const TONE = {
-    red: "bg-red-100 text-red-800",
-    amber: "bg-amber-100 text-amber-800",
-    green: "bg-emerald-100 text-emerald-800",
-    blue: "bg-blue-100 text-blue-800",
+    red: "bg-destructive/10 text-destructive",
+    amber: "bg-[var(--warning)]/20 text-[color-mix(in_oklch,var(--warning),black_38%)]",
+    green: "bg-[var(--success)]/15 text-[color-mix(in_oklch,var(--success),black_28%)]",
+    blue: "bg-primary/10 text-primary",
     muted: "bg-muted text-muted-foreground",
   } as const;
 
+  const abnormalCount = events.filter((e) => e.badge?.tone === "red").length;
+  const needsReviewCount = events.filter((e) => e.badge?.label === "needs review").length;
+
   return (
     <div className="grid gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Timeline</h1>
-          <p className="text-sm text-muted-foreground">
-            {profile.displayName}&apos;s health history
-          </p>
+      <section className="health-gradient -mx-4 -mt-6 grid gap-5 px-4 py-6 text-primary-foreground sm:rounded-b-lg md:mx-0 md:mt-0 md:rounded-lg md:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-2xl">
+            <Badge className="mb-3 bg-white/14 text-white ring-1 ring-white/20" variant="secondary">
+              {profile.displayName}&apos;s record
+            </Badge>
+            <h1 className="text-3xl font-semibold sm:text-4xl">Health timeline</h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-white/78">
+              Labs, reports, prescriptions, and manual entries in one scan-friendly history.
+            </p>
+          </div>
+          <Button asChild className="bg-white text-slate-950 hover:bg-white/90">
+            <Link href="/upload">
+              <Upload className="size-4" />
+              Upload
+            </Link>
+          </Button>
         </div>
-        <Button asChild>
-          <Link href="/upload">
-            <Upload className="size-4" />
-            Upload
-          </Link>
-        </Button>
-      </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/15">
+            <p className="text-xs text-white/65">Total events</p>
+            <p className="text-2xl font-semibold tabular-nums">{events.length}</p>
+          </div>
+          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/15">
+            <p className="text-xs text-white/65">Needs review</p>
+            <p className="text-2xl font-semibold tabular-nums">{needsReviewCount}</p>
+          </div>
+          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/15">
+            <p className="text-xs text-white/65">Flagged values</p>
+            <p className="text-2xl font-semibold tabular-nums">{abnormalCount}</p>
+          </div>
+        </div>
+      </section>
 
       {events.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <FlaskConical className="size-10 text-muted-foreground/40" />
-            <p className="font-medium">No health records yet</p>
-            <p className="max-w-sm text-sm text-muted-foreground">
-              Upload a lab report PDF and Hearth will extract the values into{" "}
-              {profile.displayName}&apos;s timeline.
-            </p>
+          <CardContent>
+            <EmptyState
+              mood="thinking"
+              title="No health records yet"
+              description={`Upload a lab report PDF and Pip will help Hearth extract values into ${profile.displayName}'s timeline.`}
+            >
             <Button asChild>
               <Link href="/upload">Upload first report</Link>
             </Button>
+            </EmptyState>
           </CardContent>
         </Card>
       ) : (
@@ -237,14 +260,16 @@ export default async function TimelinePage() {
           {[...groups.entries()].map(([month, list]) => (
             <div key={month}>
               <h2 className="mb-2 text-sm font-semibold text-muted-foreground">{month}</h2>
-              <div className="grid gap-2 border-l-2 border-muted pl-4">
+              <div className="grid gap-2 border-l-2 border-primary/15 pl-4">
                 {list.map((e, i) => {
                   const Icon = ICONS[e.kind];
                   return (
                     <Link key={`${month}-${i}`} href={e.href}>
-                      <Card className="py-3 transition-colors hover:bg-accent/50">
+                      <Card className="interactive-card py-3">
                         <CardContent className="flex items-center gap-3 px-4">
-                          <Icon className="size-4 shrink-0 text-muted-foreground" />
+                          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-primary">
+                            <Icon className="size-4" />
+                          </span>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium">{e.title}</p>
                             <p className="truncate text-xs text-muted-foreground">

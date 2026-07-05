@@ -13,12 +13,12 @@ import path from "path";
 
 const LOCAL_DIR = path.join(process.cwd(), "storage");
 
-function useBlob() {
+function shouldUseBlob() {
   return !!process.env.BLOB_READ_WRITE_TOKEN;
 }
 
 export async function putObject(key: string, data: Buffer): Promise<string> {
-  if (useBlob()) {
+  if (shouldUseBlob()) {
     const { put } = await import("@vercel/blob");
     const blob = await put(key, data, {
       // Payload is encrypted and the URL is unguessable; access still goes

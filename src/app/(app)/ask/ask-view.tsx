@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Loader2, Send, ShieldCheck } from "lucide-react";
+import { Loader2, Send, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/mascot";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -87,32 +88,43 @@ export function AskView({
   return (
     <div className="mx-auto grid max-w-3xl gap-4">
       <div>
-        <h1 className="text-2xl font-semibold">Ask about {profileName}&apos;s health</h1>
-        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <div className="mb-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground">
+          <Sparkles className="size-3.5" />
+          Ask AI
+        </div>
+        <h1 className="text-3xl font-semibold">Ask about {profileName}&apos;s health</h1>
+        <p className="mt-2 flex items-start gap-1.5 text-sm leading-6 text-muted-foreground">
           <ShieldCheck className="size-4" />
           Uses only {profileName}&apos;s confirmed data · PII removed before the AI sees it ·
           every question is audit-logged
         </p>
       </div>
 
-      <Card className="border-amber-200 bg-amber-50/60 py-3">
-        <CardContent className="px-4 text-xs text-amber-900">
+      <Card className="border-[color-mix(in_oklch,var(--warning),white_35%)] bg-[var(--warning)]/12 py-3">
+        <CardContent className="px-4 text-xs leading-5 text-[color-mix(in_oklch,var(--warning),black_45%)]">
           This assistant summarizes your own records. It is not a doctor, does not diagnose,
           and never advises starting or stopping medication.
         </CardContent>
       </Card>
 
       {messages.length === 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="grid gap-3 rounded-lg border bg-card/70 p-4">
+          <EmptyState
+            mood="happy"
+            title="What would you like to understand?"
+            description="Pip can help draft questions and summarize confirmed records, while keeping medical judgment with your clinician."
+          />
+          <div className="flex flex-wrap justify-center gap-2">
           {SUGGESTIONS.map((s) => (
             <button
               key={s}
               onClick={() => ask(s)}
-              className="rounded-full border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="rounded-lg border bg-background/80 px-3 py-2 text-sm font-medium text-muted-foreground shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent hover:text-foreground"
             >
               {s}
             </button>
           ))}
+          </div>
         </div>
       )}
 
@@ -123,8 +135,8 @@ export function AskView({
             className={cn(
               "max-w-[92%] rounded-2xl px-4 py-3 text-sm",
               m.role === "user"
-                ? "justify-self-end bg-primary text-primary-foreground"
-                : "justify-self-start border bg-background"
+                ? "justify-self-end rounded-br-lg bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                : "justify-self-start rounded-bl-lg border bg-card shadow-sm"
             )}
           >
             {m.role === "assistant" ? renderAnswer(m.content) : m.content}
@@ -140,21 +152,25 @@ export function AskView({
           </div>
         ))}
         {busy && (
-          <div className="flex items-center gap-2 justify-self-start rounded-2xl border px-4 py-3 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 justify-self-start rounded-2xl rounded-bl-lg border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
             <Loader2 className="size-4 animate-spin" /> Analyzing confirmed data…
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
 
       <form
         onSubmit={(e) => {
           e.preventDefault();
           ask(input);
         }}
-        className="sticky bottom-4 flex items-end gap-2"
+        className="sticky bottom-20 flex items-end gap-2 rounded-lg border bg-background/90 p-2 shadow-xl shadow-primary/10 backdrop-blur md:bottom-4"
       >
         <Textarea
           value={input}
@@ -166,7 +182,7 @@ export function AskView({
             }
           }}
           placeholder={`Ask about ${profileName}'s confirmed results…`}
-          className="min-h-[52px] resize-none bg-background"
+          className="min-h-[52px] resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
         />
         <Button type="submit" size="icon" disabled={busy || !input.trim()}>
           <Send className="size-4" />

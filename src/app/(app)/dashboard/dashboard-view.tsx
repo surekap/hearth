@@ -14,6 +14,7 @@ import {
 import { TrendingDown, TrendingUp, Minus, Pill, Stethoscope } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/mascot";
 import { cn } from "@/lib/utils";
 import type { DashboardMarker, MetricCard } from "@/lib/dashboard";
 
@@ -60,7 +61,12 @@ function MetricChart({ card }: { card: MetricCard }) {
                 })
               : ""
           }
-          contentStyle={{ fontSize: 12, borderRadius: 8 }}
+          contentStyle={{
+            fontSize: 12,
+            borderRadius: 8,
+            borderColor: "var(--border)",
+            boxShadow: "0 12px 30px oklch(0.19 0.035 252 / 12%)",
+          }}
         />
         {refHigh != null && (
           <ReferenceLine y={refHigh} stroke="#ef4444" strokeDasharray="4 3" strokeOpacity={0.5} />
@@ -71,10 +77,11 @@ function MetricChart({ card }: { card: MetricCard }) {
         <Line
           type="monotone"
           dataKey="value"
-          stroke="var(--primary)"
-          strokeWidth={2}
-          dot={{ r: 3 }}
-          isAnimationActive={false}
+          stroke="var(--chart-1)"
+          strokeWidth={2.5}
+          dot={{ r: 3, strokeWidth: 2, fill: "var(--card)" }}
+          activeDot={{ r: 5 }}
+          isAnimationActive
         />
       </LineChart>
     </ResponsiveContainer>
@@ -109,20 +116,23 @@ export function DashboardView({
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Metabolic &amp; liver</h1>
-          <p className="text-sm text-muted-foreground">
+          <Badge className="mb-2 bg-accent text-accent-foreground" variant="secondary">
+            Dashboard
+          </Badge>
+          <h1 className="text-3xl font-semibold">Metabolic &amp; liver</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Confirmed values only · {profileName}
           </p>
         </div>
-        <div className="flex rounded-lg border p-0.5">
+        <div className="scrollbar-none flex max-w-full overflow-x-auto rounded-lg border bg-card/80 p-1 shadow-xs">
           {RANGES.map((r) => (
             <Link
               key={r.key}
               href={`${pathname}?range=${r.key}`}
               className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                "rounded-md px-3 py-1.5 text-xs font-semibold transition-all",
                 data.range === r.key
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -139,7 +149,7 @@ export function DashboardView({
         <Card className="py-3">
           <CardContent className="px-4">
             <p className="text-xs text-muted-foreground">AST/ALT ratio</p>
-            <p className="text-lg font-semibold tabular-nums">
+            <p className="text-2xl font-semibold tabular-nums">
               {data.derived.astAltRatio ?? "–"}
             </p>
             <p className="text-xs text-muted-foreground">&lt;1 typical in NAFLD</p>
@@ -148,7 +158,7 @@ export function DashboardView({
         <Card className="py-3">
           <CardContent className="px-4">
             <p className="text-xs text-muted-foreground">TG/HDL ratio</p>
-            <p className="text-lg font-semibold tabular-nums">
+            <p className="text-2xl font-semibold tabular-nums">
               {data.derived.tgHdlRatio ?? "–"}
             </p>
             <p className="text-xs text-muted-foreground">&gt;3 suggests insulin resistance</p>
@@ -157,7 +167,7 @@ export function DashboardView({
         <Card className="py-3">
           <CardContent className="px-4">
             <p className="text-xs text-muted-foreground">ALT trend</p>
-            <p className="flex items-center gap-1 text-lg font-semibold capitalize">
+            <p className="flex items-center gap-1 text-2xl font-semibold capitalize">
               <TrendIcon trend={data.derived.altTrend} />
               {data.derived.altTrend ?? "–"}
             </p>
@@ -166,7 +176,7 @@ export function DashboardView({
         <Card className="py-3">
           <CardContent className="px-4">
             <p className="text-xs text-muted-foreground">Abnormal values</p>
-            <p className="text-lg font-semibold tabular-nums">
+            <p className="text-2xl font-semibold tabular-nums">
               {data.derived.abnormalCount}
               <span className="text-sm font-normal text-muted-foreground">
                 {" "}
@@ -181,9 +191,12 @@ export function DashboardView({
       {/* Metric cards */}
       {withData.length === 0 ? (
         <Card>
-          <CardContent className="py-14 text-center text-sm text-muted-foreground">
-            No confirmed values in this range yet. Upload and confirm a lab report to see
-            trends.
+          <CardContent>
+            <EmptyState
+              mood="thinking"
+              title="No confirmed values in this range"
+              description="Upload and confirm a lab report to turn raw PDFs into trend cards and markers."
+            />
           </CardContent>
         </Card>
       ) : (
@@ -195,7 +208,13 @@ export function DashboardView({
               latest.interpretation === "critical" ||
               latest.interpretation === "low";
             return (
-              <Card key={card.name} className={cn("py-4", abnormal && "border-red-200")}>
+              <Card
+                key={card.name}
+                className={cn(
+                  "interactive-card py-4",
+                  abnormal && "ring-destructive/25"
+                )}
+              >
                 <CardHeader className="px-4 pb-0">
                   <CardTitle className="flex items-center justify-between text-sm">
                     <span className="flex items-center gap-1.5">
@@ -205,7 +224,7 @@ export function DashboardView({
                     <span
                       className={cn(
                         "text-base font-semibold tabular-nums",
-                        abnormal && "text-red-600"
+                        abnormal && "text-destructive"
                       )}
                     >
                       {latest.value}
@@ -223,7 +242,7 @@ export function DashboardView({
                     {latest.referenceHigh != null &&
                       ` · ref ${latest.referenceLow ?? 0}–${latest.referenceHigh}`}
                     {abnormal && (
-                      <Badge className="ml-2 bg-red-100 text-red-800" variant="secondary">
+                      <Badge className="ml-2 bg-destructive/10 text-destructive" variant="secondary">
                         {latest.interpretation}
                       </Badge>
                     )}

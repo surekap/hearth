@@ -37,10 +37,10 @@ export function ProfileSwitcher({
         <Button
           variant="outline"
           size="sm"
-          className={cn("gap-1.5 font-medium", pending && "opacity-60")}
+          className={cn("max-w-[42vw] gap-1.5 font-medium", pending && "opacity-60")}
         >
           <UserRound className="size-4" />
-          {active?.displayName ?? "No profile"}
+          <span className="truncate">{active?.displayName ?? "No profile"}</span>
           <ChevronDown className="size-3.5 opacity-60" />
         </Button>
       </DropdownMenuTrigger>

@@ -6,6 +6,7 @@ import { Check, Loader2, Pill, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/mascot";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -52,12 +53,12 @@ const EVENT_LABEL: Record<string, string> = {
 };
 
 const EVENT_TONE: Record<string, string> = {
-  prescribed: "bg-blue-100 text-blue-800",
-  started: "bg-emerald-100 text-emerald-800",
-  stopped: "bg-red-100 text-red-800",
+  prescribed: "bg-primary/10 text-primary",
+  started: "bg-[var(--success)]/15 text-[color-mix(in_oklch,var(--success),black_28%)]",
+  stopped: "bg-destructive/10 text-destructive",
   intake_logged: "bg-secondary text-secondary-foreground",
-  skipped: "bg-amber-100 text-amber-800",
-  dose_changed: "bg-violet-100 text-violet-800",
+  skipped: "bg-[var(--warning)]/20 text-[color-mix(in_oklch,var(--warning),black_38%)]",
+  dose_changed: "bg-[var(--chart-5)]/12 text-[var(--chart-5)]",
 };
 
 export function MedsView({
@@ -88,7 +89,6 @@ export function MedsView({
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (name.trim().length < 2) {
-      setResults([]);
       return;
     }
     searchTimer.current = setTimeout(async () => {
@@ -154,10 +154,13 @@ export function MedsView({
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl">Medications</h1>
-          <p className="text-sm text-muted-foreground">
+          <Badge className="mb-2 bg-accent text-accent-foreground" variant="secondary">
+            Meds
+          </Badge>
+          <h1 className="text-3xl font-semibold">Medications</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {profileName}&apos;s medicines — one tap to log a dose
           </p>
         </div>
@@ -177,7 +180,10 @@ export function MedsView({
                 <Label>Name</Label>
                 <Input
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (e.target.value.trim().length < 2) setResults([]);
+                  }}
                   placeholder="Search or type a name…"
                   autoFocus
                 />
@@ -226,7 +232,7 @@ export function MedsView({
                 <select
                   value={eventType}
                   onChange={(e) => setEventType(e.target.value)}
-                  className="border-input h-9 rounded-md border bg-transparent px-3 text-sm"
+                  className="border-input h-9 rounded-lg border bg-background/75 px-3 text-sm outline-none transition-all focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <option value="started">Started taking</option>
                   <option value="prescribed">Prescribed</option>
@@ -249,10 +255,11 @@ export function MedsView({
         </CardHeader>
         <CardContent>
           {recents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No recent medicines. Add one manually or accept a prescription from the review
-              screen — each medicine becomes one-tap loggable here.
-            </p>
+            <EmptyState
+              mood="thinking"
+              title="No recent medicines"
+              description="Add one manually or accept a prescription from review. After that, each medicine becomes one-tap loggable here."
+            />
           ) : (
             <div className="flex flex-wrap gap-2">
               {recents.map((r) => (
@@ -261,14 +268,15 @@ export function MedsView({
                   onClick={() => quickLog(r)}
                   disabled={logging !== null}
                   className={cn(
-                    "flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm transition-all hover:border-primary hover:bg-primary/5",
-                    justLogged === r.nameText && "border-emerald-500 bg-emerald-50"
+                    "flex min-h-10 items-center gap-2 rounded-lg border px-3.5 py-2 text-sm shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-primary/5",
+                    justLogged === r.nameText &&
+                      "border-[var(--success)] bg-[var(--success)]/10"
                   )}
                 >
                   {logging === r.nameText ? (
                     <Loader2 className="size-3.5 animate-spin" />
                   ) : justLogged === r.nameText ? (
-                    <Check className="size-3.5 text-emerald-600" />
+                    <Check className="size-3.5 text-[var(--success)]" />
                   ) : (
                     <Pill className="size-3.5 text-primary" />
                   )}
@@ -291,8 +299,10 @@ export function MedsView({
             <p className="text-sm text-muted-foreground">No medication events yet.</p>
           ) : (
             events.map((e) => (
-              <div key={e.id} className="flex items-center gap-3 rounded-lg border p-2.5">
-                <Pill className="size-4 shrink-0 text-muted-foreground" />
+              <div key={e.id} className="flex items-center gap-3 rounded-lg border bg-card/70 p-2.5 transition-colors hover:bg-accent/35">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-primary">
+                  <Pill className="size-4" />
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">
                     {e.nameText}

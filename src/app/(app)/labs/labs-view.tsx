@@ -6,6 +6,7 @@ import { ChevronDown, ChevronRight, Loader2, Plus, Search, Trash2 } from "lucide
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/mascot";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -43,11 +44,11 @@ function interpBadge(interpretation: string) {
   switch (interpretation) {
     case "high":
     case "critical":
-      return <Badge className="bg-red-100 text-red-800">{interpretation}</Badge>;
+      return <Badge className="bg-destructive/10 text-destructive">{interpretation}</Badge>;
     case "low":
-      return <Badge className="bg-blue-100 text-blue-800">low</Badge>;
+      return <Badge className="bg-primary/10 text-primary">low</Badge>;
     case "normal":
-      return <Badge className="bg-emerald-100 text-emerald-800">normal</Badge>;
+      return <Badge className="bg-[var(--success)]/15 text-[color-mix(in_oklch,var(--success),black_28%)]">normal</Badge>;
     default:
       return null;
   }
@@ -129,10 +130,13 @@ export function LabsView({
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Lab values</h1>
-          <p className="text-sm text-muted-foreground">
+          <Badge className="mb-2 bg-accent text-accent-foreground" variant="secondary">
+            Labs
+          </Badge>
+          <h1 className="text-3xl font-semibold">Lab values</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Confirmed values for {profileName}
           </p>
         </div>
@@ -157,7 +161,7 @@ export function LabsView({
                     const t = allTypes.find((t) => t.id === e.target.value);
                     if (t?.normalUnit) setNewUnit(t.normalUnit);
                   }}
-                  className="border-input h-9 rounded-md border bg-transparent px-3 text-sm"
+                  className="border-input h-9 rounded-lg border bg-background/75 px-3 text-sm outline-none transition-all focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <option value="">Choose test…</option>
                   {allTypes.map((t) => (
@@ -199,7 +203,7 @@ export function LabsView({
         </Dialog>
       </div>
 
-      <div className="relative">
+      <div className="relative rounded-lg border bg-card/80 p-1 shadow-xs">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Search tests — ALT, HbA1c, LDL, Vitamin D…"
@@ -211,10 +215,16 @@ export function LabsView({
 
       {groups.length === 0 ? (
         <Card>
-          <CardContent className="py-14 text-center text-sm text-muted-foreground">
-            {rows.length === 0
-              ? "No confirmed values yet. Upload a lab report or add one manually."
-              : "No tests match your search."}
+          <CardContent>
+            <EmptyState
+              mood={rows.length === 0 ? "thinking" : "concerned"}
+              title={rows.length === 0 ? "No confirmed values yet" : "No tests match"}
+              description={
+                rows.length === 0
+                  ? "Upload a lab report or add one manually to start building this profile's lab history."
+                  : "Try a different test name, category, or abbreviation."
+              }
+            />
           </CardContent>
         </Card>
       ) : (
@@ -223,10 +233,10 @@ export function LabsView({
             const latest = history[0];
             const isOpen = !!open[type.typeId];
             return (
-              <Card key={type.typeId} className="py-0">
+              <Card key={type.typeId} className="interactive-card py-0">
                 <CardContent className="px-0">
                   <button
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50"
                     onClick={() =>
                       setOpen((prev) => ({ ...prev, [type.typeId]: !prev[type.typeId] }))
                     }
@@ -243,7 +253,7 @@ export function LabsView({
                         {history.length === 1 ? "" : "s"}
                       </p>
                     </div>
-                    <div className="text-right">
+                    <div className="shrink-0 text-right">
                       <p className="font-semibold tabular-nums">
                         {latest.valueNumeric ?? latest.valueText}{" "}
                         <span className="text-xs font-normal text-muted-foreground">
@@ -262,8 +272,8 @@ export function LabsView({
                   </button>
 
                   {isOpen && (
-                    <div className="border-t px-4 py-2">
-                      <table className="w-full text-sm">
+                    <div className="overflow-x-auto border-t px-4 py-2">
+                      <table className="w-full min-w-[620px] text-sm">
                         <thead>
                           <tr className="text-left text-xs text-muted-foreground">
                             <th className="py-1.5 font-medium">Date</th>

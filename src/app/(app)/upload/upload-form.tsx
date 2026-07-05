@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CloudUpload, FileText, Loader2 } from "lucide-react";
+import { CloudUpload, FileText, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -109,14 +109,16 @@ export function UploadForm({
           onDrop={onDrop}
           onClick={() => inputRef.current?.click()}
           className={cn(
-            "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-10 text-center transition-colors",
-            dragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25",
-            file && "border-primary/50 bg-primary/5"
+            "group flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-all duration-200 sm:p-12",
+            dragOver ? "border-primary bg-primary/10 shadow-inner" : "border-muted-foreground/25",
+            file && "border-primary/50 bg-primary/10"
           )}
         >
           {file ? (
             <>
-              <FileText className="size-8 text-primary" />
+              <span className="flex size-14 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <FileText className="size-7" />
+              </span>
               <p className="font-medium">{file.name}</p>
               <p className="text-xs text-muted-foreground">
                 {(file.size / 1024 / 1024).toFixed(2)} MB — click to change
@@ -124,9 +126,11 @@ export function UploadForm({
             </>
           ) : (
             <>
-              <CloudUpload className="size-8 text-muted-foreground" />
-              <p className="font-medium">Drop a PDF or image here</p>
-              <p className="text-xs text-muted-foreground">
+              <span className="flex size-14 items-center justify-center rounded-lg bg-accent text-primary transition-transform group-hover:-translate-y-1">
+                <CloudUpload className="size-7" />
+              </span>
+              <p className="font-heading text-lg font-medium">Drop a PDF or image here</p>
+              <p className="max-w-sm text-xs leading-5 text-muted-foreground">
                 or click to browse · PDF, JPG, PNG, WebP · max 20MB
               </p>
             </>
@@ -146,7 +150,7 @@ export function UploadForm({
             <select
               value={profileId}
               onChange={(e) => setProfileId(e.target.value)}
-              className="border-input h-9 rounded-md border bg-transparent px-3 text-sm shadow-xs"
+              className="border-input h-9 rounded-lg border bg-background/75 px-3 text-sm shadow-xs outline-none transition-all focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {profiles.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -160,7 +164,7 @@ export function UploadForm({
             <select
               value={docType}
               onChange={(e) => setDocType(e.target.value)}
-              className="border-input h-9 rounded-md border bg-transparent px-3 text-sm shadow-xs"
+              className="border-input h-9 rounded-lg border bg-background/75 px-3 text-sm shadow-xs outline-none transition-all focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {DOC_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>
@@ -174,7 +178,7 @@ export function UploadForm({
             <select
               value={source}
               onChange={(e) => setSource(e.target.value)}
-              className="border-input h-9 rounded-md border bg-transparent px-3 text-sm shadow-xs"
+              className="border-input h-9 rounded-lg border bg-background/75 px-3 text-sm shadow-xs outline-none transition-all focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {SOURCES.map((s) => (
                 <option key={s.value} value={s.value}>
@@ -189,11 +193,16 @@ export function UploadForm({
           </div>
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
 
         <Button onClick={submit} disabled={!file || busy} size="lg">
           {stage === "uploading" && <Loader2 className="size-4 animate-spin" />}
           {stage === "processing" && <Loader2 className="size-4 animate-spin" />}
+          {stage === "idle" && <Sparkles className="size-4" />}
           {stage === "idle" && "Upload & extract"}
           {stage === "uploading" && "Uploading…"}
           {stage === "processing" && "Extracting values… (can take ~30s)"}

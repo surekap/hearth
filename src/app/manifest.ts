@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "Private family health record: upload lab reports, review extracted values, track trends.",
     start_url: "/",
     display: "standalone",
-    background_color: "#ffffff",
-    theme_color: "#0a0a0a",
+    background_color: "#f7fbff",
+    theme_color: "#13203f",
     icons: [
       {
         src: "/icons/icon-192.png",

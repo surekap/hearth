@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Image from "next/image";
 import { AuthError } from "next-auth";
 import { signIn } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -29,28 +30,24 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="relative flex min-h-svh items-center justify-center overflow-hidden p-4">
-      {/* warm hearth glow */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(52rem 32rem at 50% 110%, oklch(0.54 0.14 40 / 14%), transparent 65%), radial-gradient(40rem 24rem at 85% -10%, oklch(0.65 0.13 80 / 10%), transparent 60%)",
-        }}
-      />
+    <main className="health-gradient relative flex min-h-svh items-center justify-center overflow-hidden p-4">
       <div className="relative w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary text-2xl text-primary-foreground shadow-lg shadow-primary/25">
-            ♥
+          <h1 className="sr-only">Hearth</h1>
+          <div className="mx-auto flex max-w-sm items-center justify-center overflow-hidden rounded-lg bg-white/96 p-2 shadow-2xl shadow-black/18">
+            <Image
+              src="/logo.png"
+              alt="Hearth. Your health. Your people. Your home."
+              width={320}
+              height={160}
+              priority
+              className="h-28 w-full object-cover object-center"
+            />
           </div>
-          <h1 className="font-display text-4xl">Hearth</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Your family&apos;s health, kept close.
-          </p>
+          <p className="mt-4 text-sm text-white/72">Your family&apos;s health, kept close.</p>
         </div>
 
-        <div className="rounded-2xl border bg-card p-6 shadow-sm">
+        <div className="rounded-lg border border-white/15 bg-card/95 p-6 shadow-2xl shadow-black/20 backdrop-blur">
           <form action={login} className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
@@ -74,7 +71,9 @@ export default async function LoginPage({
               />
             </div>
             {error && (
-              <p className="text-sm text-destructive">Invalid email or password.</p>
+              <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                Invalid email or password.
+              </p>
             )}
             <Button type="submit" className="w-full">
               Sign in
@@ -82,7 +81,7 @@ export default async function LoginPage({
           </form>
         </div>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground">
+        <p className="mt-6 text-center text-xs text-white/62">
           Encrypted documents · per-profile isolation · you hold the keys
         </p>
       </div>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/db";
+import { getProfileAccess } from "@/lib/profile-access";
 
 export class ApiError extends Error {
   constructor(
@@ -24,11 +24,18 @@ export async function requireUser() {
  * belongs to the authenticated user. Returns the profile or throws 404.
  */
 export async function requireProfile(userId: string, profileId: string) {
-  const profile = await db.query.profiles.findFirst({
-    where: and(eq(schema.profiles.id, profileId), eq(schema.profiles.userId, userId)),
-  });
-  if (!profile) throw new ApiError(404, "Profile not found");
-  return profile;
+  const access = await getProfileAccess(userId, profileId);
+  if (!access) throw new ApiError(404, "Profile not found");
+  return access.profile;
+}
+
+export async function requireProfileManager(userId: string, profileId: string) {
+  const access = await getProfileAccess(userId, profileId);
+  if (!access) throw new ApiError(404, "Profile not found");
+  if (access.role !== "owner" && access.role !== "manager") {
+    throw new ApiError(403, "You cannot manage accounts for this profile");
+  }
+  return access.profile;
 }
 
 export function handleApiError(e: unknown) {

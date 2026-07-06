@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
-import { eq } from "drizzle-orm";
-import { db, schema } from "@/db";
+import { getAccessibleProfiles } from "@/lib/profile-access";
 
 const COOKIE = "hearth_active_profile";
 
@@ -12,10 +11,7 @@ export async function getActiveProfile(userId: string) {
   const jar = await cookies();
   const wanted = jar.get(COOKIE)?.value;
 
-  const all = await db.query.profiles.findMany({
-    where: eq(schema.profiles.userId, userId),
-    orderBy: (p, { asc }) => [asc(p.createdAt)],
-  });
+  const all = await getAccessibleProfiles(userId);
   if (all.length === 0) return { profile: null, profiles: all };
 
   const profile = all.find((p) => p.id === wanted) ?? all[0];

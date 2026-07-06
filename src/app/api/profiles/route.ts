@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { requireUser, handleApiError } from "@/lib/api";
+import { getAccessibleProfiles } from "@/lib/profile-access";
 
 const createProfileSchema = z.object({
   displayName: z.string().min(1).max(100),
@@ -16,10 +16,7 @@ const createProfileSchema = z.object({
 export async function GET() {
   try {
     const { userId } = await requireUser();
-    const profiles = await db.query.profiles.findMany({
-      where: eq(schema.profiles.userId, userId),
-      orderBy: (p, { asc }) => [asc(p.createdAt)],
-    });
+    const profiles = await getAccessibleProfiles(userId);
     return NextResponse.json({ profiles });
   } catch (e) {
     return handleApiError(e);

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { requireUser, requireProfile, handleApiError, logAudit } from "@/lib/api";
+import { getAccessibleProfiles } from "@/lib/profile-access";
 import { buildAiContext } from "@/lib/ai/context";
 import { answerWithOpenAI, answerWithMock } from "@/lib/ai/answer";
 import { tryRuleAnswer } from "@/lib/ai/rules";
@@ -42,8 +42,10 @@ export async function POST(req: NextRequest) {
 
     // Names of all family members + account holder are redaction targets.
     const [user, familyProfiles] = await Promise.all([
-      db.query.users.findFirst({ where: eq(schema.users.id, userId) }),
-      db.query.profiles.findMany({ where: eq(schema.profiles.userId, userId) }),
+      db.query.users.findFirst({
+        where: (u, { eq }) => eq(u.id, userId),
+      }),
+      getAccessibleProfiles(userId),
     ]);
     const knownNames = [
       user?.name ?? "",

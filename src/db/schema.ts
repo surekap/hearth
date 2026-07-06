@@ -23,6 +23,8 @@ export const relationshipEnum = pgEnum("relationship", [
   "other",
 ]);
 
+export const profileAccessRoleEnum = pgEnum("profile_access_role", ["manager", "member"]);
+
 export const sexEnum = pgEnum("sex_at_birth", ["male", "female", "other", "unknown"]);
 
 export const documentTypeEnum = pgEnum("document_type", [
@@ -245,6 +247,29 @@ export const profiles = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("profiles_user_idx").on(t.userId)]
+);
+
+export const profileAccounts = pgTable(
+  "profile_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: profileAccessRoleEnum("role").notNull().default("member"),
+    invitedByUserId: uuid("invited_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("profile_accounts_user_idx").on(t.userId),
+    index("profile_accounts_profile_idx").on(t.profileId),
+    uniqueIndex("profile_accounts_profile_user_idx").on(t.profileId, t.userId),
+  ]
 );
 
 export const documents = pgTable(

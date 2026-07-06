@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -7,7 +8,6 @@ import {
   AlertTriangle,
   Bed,
   CalendarDays,
-  CircleGauge,
   ClipboardList,
   Droplets,
   Dumbbell,
@@ -49,6 +49,44 @@ const RANGES = [
   { key: "all", label: "All time" },
 ];
 
+type SystemMedia = {
+  image: string;
+  video?: string;
+  position: string;
+  tone: "light" | "dark";
+};
+
+const SYSTEM_MEDIA: Partial<Record<string, SystemMedia>> = {
+  cardiovascular: {
+    image: "/images/heart-circulatory.png",
+    video: "/images/heart-circulatory.mp4",
+    position: "50% 42%",
+    tone: "light",
+  },
+  kidney: {
+    image: "/images/kidney-urinary.png",
+    video: "/images/kidney-urinary.mp4",
+    position: "50% 50%",
+    tone: "dark",
+  },
+  metabolic: {
+    image: "/images/liver-metabolism.png",
+    position: "50% 45%",
+    tone: "light",
+  },
+  sleep: {
+    image: "/images/sleep-recovery.png",
+    video: "/images/sleep-recovery.mp4",
+    position: "50% 45%",
+    tone: "light",
+  },
+  "body-composition": {
+    image: "/images/body-composition.png",
+    position: "50% 38%",
+    tone: "light",
+  },
+};
+
 function TrendIcon({ trend }: { trend: string | null }) {
   if (trend === "rising") return <TrendingUp className="size-4 text-red-500" />;
   if (trend === "falling") return <TrendingDown className="size-4 text-emerald-600" />;
@@ -89,6 +127,7 @@ function metricStatusTone(status: DashboardSystemWidget["metrics"][number]["stat
 function SystemIcon({ id }: { id: string }) {
   if (id === "cardiovascular") return <HeartPulse className="size-5 text-primary" />;
   if (id === "blood-counts") return <Droplets className="size-5 text-destructive" />;
+  if (id === "kidney") return <Droplets className="size-5 text-destructive" />;
   if (id === "sleep") return <Bed className="size-5 text-primary" />;
   if (id === "body-composition") {
     return <Dumbbell className="size-5 text-[color-mix(in_oklch,var(--success),black_22%)]" />;
@@ -101,10 +140,6 @@ function SystemIcon({ id }: { id: string }) {
     return <Smile className="size-5 text-[color-mix(in_oklch,var(--success),black_22%)]" />;
   }
   return <Stethoscope className="size-5 text-primary" />;
-}
-
-function metricByLabel(widget: DashboardSystemWidget, label: string) {
-  return widget.metrics.find((metric) => metric.label === label);
 }
 
 function MiniCallout({
@@ -122,97 +157,156 @@ function MiniCallout({
   );
 }
 
-function PulseGraphic({ widget }: { widget: DashboardSystemWidget }) {
-  const ldl = metricByLabel(widget, "LDL");
-  const hba1c = metricByLabel(widget, "HbA1c");
+function WidgetMiniChart({ widget }: { widget: DashboardSystemWidget }) {
+  const points = widget.visual.points.map((value, index) => ({ index, value }));
+
+  if (points.length < 2) {
+    return (
+      <div className="grid h-20 place-items-center rounded-md border border-dashed border-white/50 bg-white/30 px-3 text-center text-xs font-medium text-muted-foreground backdrop-blur-md dark:border-white/10 dark:bg-white/5">
+        Not enough history for a trend chart
+      </div>
+    );
+  }
 
   return (
-    <div className="relative min-h-36 overflow-hidden rounded-lg border border-white/50 bg-[linear-gradient(135deg,oklch(0.95_0.04_205),oklch(0.99_0.018_27))] p-4 dark:border-white/10 dark:bg-[linear-gradient(135deg,oklch(0.28_0.055_225),oklch(0.2_0.045_252))]">
-      <div className="absolute inset-x-4 top-1/2 h-px bg-white/70 dark:bg-white/15" />
-      <div className="absolute left-4 right-4 top-10 flex h-16 items-end gap-1">
-        {[24, 42, 30, 68, 34, 28, 76, 46, 36, 58, 82, 44, 32, 66, 38, 54].map((height, index) => (
-          <span
-            key={index}
-            className="flex-1 rounded-full bg-primary/45 shadow-sm"
-            style={{ height: `${height}%` }}
+    <div className="h-20">
+      <RechartsResponsiveContainer width="100%" height="100%">
+        <RechartsLineChart data={points} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+          <RechartsYAxis hide domain={["auto", "auto"]} />
+          <RechartsLine
+            type="monotone"
+            dataKey="value"
+            stroke="var(--primary)"
+            strokeWidth={2.5}
+            dot={false}
+            activeDot={false}
+            isAnimationActive={false}
           />
-        ))}
-      </div>
-      <div className="absolute bottom-3 left-3 right-3 grid grid-cols-2 gap-2">
-        <MiniCallout label="LDL" value={ldl?.value ?? "No data"} />
-        <MiniCallout label="HbA1c" value={hba1c?.value ?? "No data"} />
-      </div>
+        </RechartsLineChart>
+      </RechartsResponsiveContainer>
     </div>
   );
 }
 
-function SleepGraphic({ widget }: { widget: DashboardSystemWidget }) {
-  const asleep = metricByLabel(widget, "Asleep");
-  const deep = metricByLabel(widget, "Deep");
-  const rem = metricByLabel(widget, "REM");
+function SystemSignalBadge({ widget }: { widget: DashboardSystemWidget }) {
+  const tone =
+    widget.tone === "danger"
+      ? "bg-red-500 text-white"
+      : widget.tone === "warning"
+        ? "bg-amber-400 text-amber-950"
+        : widget.tone === "success"
+          ? "bg-emerald-400 text-emerald-950"
+          : "bg-white/80 text-foreground";
 
   return (
-    <div className="relative min-h-36 overflow-hidden rounded-lg border border-white/50 bg-[linear-gradient(135deg,oklch(0.28_0.07_260),oklch(0.48_0.09_235))] p-4 text-white shadow-inner dark:border-white/10">
-      <div className="absolute right-5 top-4 size-10 rounded-full bg-white/90 shadow-[0_0_24px_oklch(0.9_0.05_95/45%)]" />
-      <div className="relative grid gap-1">
-        <p className="text-xs uppercase text-white/70">Last sleep</p>
-        <p className="text-3xl font-semibold tabular-nums">{asleep?.value ?? "No data"}</p>
-      </div>
-      <div className="absolute bottom-4 left-4 right-4 grid grid-cols-7 items-end gap-1.5">
-        {[42, 60, 35, 75, 54, 88, 64].map((height, index) => (
-          <span
-            key={index}
-            className="rounded-full bg-white/45"
-            style={{ height: `${height}px` }}
-          />
-        ))}
-      </div>
-      <div className="absolute bottom-4 left-4 right-4 flex justify-between text-[11px] text-white/80">
-        <span>{deep?.value ?? "Deep"}</span>
-        <span>{rem?.value ?? "REM"}</span>
-      </div>
-    </div>
-  );
-}
-
-function BodyCompositionGraphic({ widget }: { widget: DashboardSystemWidget }) {
-  const bmi = metricByLabel(widget, "BMI");
-  const bmr = metricByLabel(widget, "BMR");
-  const fat = metricByLabel(widget, "Body fat");
-  const lean = metricByLabel(widget, "Lean mass");
-
-  return (
-    <div className="relative min-h-36 overflow-hidden rounded-lg border border-white/50 bg-[linear-gradient(135deg,oklch(0.95_0.045_150),oklch(0.99_0.025_82))] p-4 dark:border-white/10 dark:bg-[linear-gradient(135deg,oklch(0.23_0.045_155),oklch(0.2_0.04_95))]">
-      <div className="grid grid-cols-[7rem_1fr] gap-4">
-        <div
-          className="grid aspect-square place-items-center rounded-full border border-white/65 shadow-inner"
-          style={{
-            background:
-              "conic-gradient(var(--success) 0 58%, oklch(0.89 0.03 145) 58% 72%, oklch(0.82 0.08 80) 72% 100%)",
-          }}
-        >
-          <div className="grid size-20 place-items-center rounded-full bg-card/90 text-center shadow-sm">
-            <CircleGauge className="mx-auto size-5 text-primary" />
-            <span className="text-xs font-semibold">Body</span>
-          </div>
-        </div>
-        <div className="grid content-center gap-2">
-          <MiniCallout label="BMI" value={bmi?.value ?? "No data"} />
-          <MiniCallout label="BMR" value={bmr?.value ?? "No data"} />
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <MiniCallout label="Fat" value={fat?.value ?? "No data"} />
-        <MiniCallout label="Lean mass" value={lean?.value ?? "No data"} />
-      </div>
-    </div>
+    <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-sm", tone)}>
+      {widget.tone === "danger"
+        ? "Review"
+        : widget.tone === "warning"
+          ? "Watch"
+          : widget.tone === "success"
+            ? "Tracked"
+            : "Building"}
+    </span>
   );
 }
 
 function SystemGraphic({ widget }: { widget: DashboardSystemWidget }) {
-  if (widget.id === "cardiovascular") return <PulseGraphic widget={widget} />;
-  if (widget.id === "sleep") return <SleepGraphic widget={widget} />;
-  if (widget.id === "body-composition") return <BodyCompositionGraphic widget={widget} />;
+  const media = SYSTEM_MEDIA[widget.id];
+
+  if (media) {
+    const lightMedia = media.tone === "light";
+    const topMetric = widget.metrics.find((metric) => metric.value !== "No data") ?? widget.metrics[0];
+
+    return (
+      <div
+        className={cn(
+          "relative min-h-72 overflow-hidden rounded-lg border shadow-inner",
+          lightMedia ? "border-black/10 bg-slate-100" : "border-white/10 bg-slate-950"
+        )}
+      >
+        {media.video ? (
+          <video
+            aria-hidden="true"
+            autoPlay
+            className="absolute inset-0 size-full object-cover"
+            loop
+            muted
+            playsInline
+            poster={media.image}
+            style={{ objectPosition: media.position }}
+          >
+            <source src={media.video} type="video/mp4" />
+          </video>
+        ) : (
+          <Image
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 size-full object-cover"
+            fill
+            sizes="(max-width: 1024px) 100vw, 50vw"
+            src={media.image}
+            style={{ objectPosition: media.position }}
+          />
+        )}
+        <div
+          className={cn(
+            "absolute inset-0",
+            lightMedia
+              ? "bg-[linear-gradient(90deg,rgba(248,250,252,.94),rgba(248,250,252,.62)_42%,rgba(248,250,252,.08)),linear-gradient(0deg,rgba(15,23,42,.24),rgba(15,23,42,0)_48%)]"
+              : "bg-[linear-gradient(90deg,rgba(2,6,23,.82),rgba(2,6,23,.5)_42%,rgba(2,6,23,.18)),linear-gradient(0deg,rgba(2,6,23,.72),rgba(2,6,23,0)_55%)]"
+          )}
+        />
+        <div className="absolute inset-0 grid content-between p-3 sm:p-4">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div
+              className={cn(
+                "grid max-w-[72%] gap-0.5 rounded-md border px-3 py-2 shadow-sm backdrop-blur-md",
+                lightMedia
+                  ? "border-white/70 bg-white/72 text-foreground"
+                  : "border-white/10 bg-white/10 text-white"
+              )}
+            >
+              <span className={cn("text-[11px] font-medium", lightMedia ? "text-muted-foreground" : "text-white/70")}>
+                {widget.visual.label}
+              </span>
+              <span className="truncate text-xl font-semibold tabular-nums">{widget.visual.value}</span>
+            </div>
+            <SystemSignalBadge widget={widget} />
+          </div>
+          <div className="grid gap-2 sm:max-w-[58%]">
+            <div
+              className={cn(
+                "rounded-md border p-2.5 shadow-sm backdrop-blur-md",
+                lightMedia
+                  ? "border-white/70 bg-white/76 text-foreground"
+                  : "border-white/10 bg-slate-950/44 text-white"
+              )}
+            >
+              <div className={cn(lightMedia ? "" : "[&_.recharts-line-curve]:stroke-white")}>
+                <WidgetMiniChart widget={widget} />
+              </div>
+            </div>
+            {topMetric && (
+              <div
+                className={cn(
+                  "min-w-0 rounded-md border px-3 py-2 shadow-sm backdrop-blur-md",
+                  lightMedia
+                    ? "border-white/70 bg-white/78 text-foreground"
+                    : "border-white/10 bg-white/10 text-white"
+                )}
+              >
+                <p className={cn("truncate text-[11px]", lightMedia ? "text-muted-foreground" : "text-white/70")}>
+                  {topMetric.label}
+                </p>
+                <p className="truncate text-sm font-semibold tabular-nums">{topMetric.value}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-36 overflow-hidden rounded-lg border border-white/50 bg-[linear-gradient(135deg,oklch(0.96_0.025_226),oklch(0.99_0.018_185))] p-4 dark:border-white/10 dark:bg-[linear-gradient(135deg,oklch(0.24_0.045_240),oklch(0.18_0.038_252))]">
@@ -223,19 +317,14 @@ function SystemGraphic({ widget }: { widget: DashboardSystemWidget }) {
           </div>
         </div>
         <div className="grid content-center gap-2">
+          <p className="text-[11px] font-medium text-muted-foreground">
+            {widget.visual.label}: {widget.visual.value}
+          </p>
+          <WidgetMiniChart widget={widget} />
           {widget.metrics.slice(0, 2).map((metric) => (
             <MiniCallout key={`${widget.id}-callout-${metric.label}`} label={metric.label} value={metric.value} />
           ))}
         </div>
-      </div>
-      <div className="absolute bottom-3 left-4 right-4 flex items-end gap-1">
-        {[36, 62, 44, 72, 52, 68, 40, 58, 76, 48, 66, 54].map((height, index) => (
-          <span
-            key={index}
-            className="h-10 flex-1 rounded-full bg-primary/20"
-            style={{ height: `${height / 2}px` }}
-          />
-        ))}
       </div>
     </div>
   );
@@ -245,7 +334,7 @@ function SystemWidgetCard({ widget }: { widget: DashboardSystemWidget }) {
   const firstSection = widget.relatedSectionIds[0];
 
   return (
-    <Card className={cn("interactive-card overflow-hidden py-0", systemTone(widget.tone))}>
+    <Card className={cn("interactive-card min-w-0 overflow-hidden py-0", systemTone(widget.tone))}>
       <div className="p-3 pb-0">
         <SystemGraphic widget={widget} />
       </div>

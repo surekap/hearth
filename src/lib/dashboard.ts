@@ -135,6 +135,13 @@ export type DashboardSystemMetric = {
   status: "normal" | "watch" | "attention" | "unknown";
 };
 
+export type DashboardSystemVisual = {
+  label: string;
+  value: string;
+  points: number[];
+  score: number | null;
+};
+
 export type DashboardSystemWidget = {
   id: string;
   title: string;
@@ -143,6 +150,7 @@ export type DashboardSystemWidget = {
   detail: string;
   tone: "neutral" | "warning" | "danger" | "success";
   metrics: DashboardSystemMetric[];
+  visual: DashboardSystemVisual;
   relatedSectionIds: string[];
   reportCount: number;
 };
@@ -386,6 +394,52 @@ function makeMetric(cardsByName: Map<string, MetricCard>, name: string, label = 
   };
 }
 
+function firstCard(cardsByName: Map<string, MetricCard>, names: string[]) {
+  return names.map((name) => cardsByName.get(name)).find((card) => card?.latest);
+}
+
+function visualPoints(card: MetricCard | undefined) {
+  if (!card) return [];
+  return card.points
+    .slice(-16)
+    .map((point) => point.value)
+    .filter((value) => Number.isFinite(value));
+}
+
+function bodyFatPercent(card: MetricCard | undefined) {
+  if (!card?.latest) return null;
+  if (card.name !== "Body Fat Percentage") return null;
+  const value = card.latest.value;
+  if (card.unit === "%" && value > 0 && value < 1) return Number((value * 100).toFixed(1));
+  return value;
+}
+
+function clampPercent(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function visualFromCard(card: MetricCard | undefined, label = card?.name ?? "Data"): DashboardSystemVisual {
+  return {
+    label,
+    value: formatMetricValue(card),
+    points: visualPoints(card),
+    score: null,
+  };
+}
+
+function bodyCompositionVisual(cardsByName: Map<string, MetricCard>): DashboardSystemVisual {
+  const fatCard = cardsByName.get("Body Fat Percentage");
+  const bmiCard = cardsByName.get("BMI");
+  const fat = bodyFatPercent(fatCard);
+  const bmi = bmiCard?.latest?.value ?? null;
+  return {
+    label: fat != null ? "Body fat" : "BMI",
+    value: fat != null ? `${fat}%` : formatMetricValue(bmiCard),
+    points: visualPoints(fatCard ?? bmiCard),
+    score: fat != null ? clampPercent(fat) : bmi != null ? clampPercent((bmi / 40) * 100) : null,
+  };
+}
+
 function summarizeSystem(input: {
   availableCards: MetricCard[];
   abnormalCards: MetricCard[];
@@ -466,6 +520,12 @@ function reportSystemWidget(input: {
         status: followUps > 0 ? "watch" : "normal",
       },
     ],
+    visual: {
+      label: "Reports",
+      value: String(reportCount),
+      points: [],
+      score: null,
+    },
     relatedSectionIds: [],
     reportCount,
   };
@@ -531,6 +591,10 @@ function buildSystemWidgets(input: {
         makeMetric(cardsByName, "LDL"),
         makeMetric(cardsByName, "HbA1c"),
       ],
+      visual: visualFromCard(
+        firstCard(cardsByName, ["Resting Heart Rate", "Heart Rate", "LDL", "HbA1c"]),
+        "Heart trend"
+      ),
       relatedSectionIds: maybeSections("cardiovascular", "metabolic", "attention"),
       reportCount: 0,
     });
@@ -559,6 +623,7 @@ function buildSystemWidgets(input: {
         makeMetric(cardsByName, "Platelet Count", "Platelets"),
         makeMetric(cardsByName, "Ferritin"),
       ],
+      visual: visualFromCard(firstCard(cardsByName, ["Hemoglobin", "WBC Count", "Platelet Count"]), "CBC trend"),
       relatedSectionIds: maybeSections("hematology", "attention"),
       reportCount: 0,
     });
@@ -587,6 +652,7 @@ function buildSystemWidgets(input: {
         makeMetric(cardsByName, "Urea"),
         makeMetric(cardsByName, "Urine Albumin Creatinine Ratio", "Urine ACR"),
       ],
+      visual: visualFromCard(firstCard(cardsByName, ["Creatinine", "eGFR", "Urea"]), "Kidney trend"),
       relatedSectionIds: maybeSections("metabolic", "renal", "urine", "attention"),
       reportCount: 0,
     });
@@ -617,6 +683,7 @@ function buildSystemWidgets(input: {
         makeMetric(cardsByName, "Triglycerides"),
         makeMetric(cardsByName, "CRP"),
       ],
+      visual: visualFromCard(firstCard(cardsByName, ["HbA1c", "ALT", "Triglycerides", "CRP"]), "Metabolic trend"),
       relatedSectionIds: maybeSections("metabolic", "attention"),
       reportCount: 0,
     });
@@ -645,6 +712,10 @@ function buildSystemWidgets(input: {
         makeMetric(cardsByName, "Sleep Deep Duration", "Deep"),
         makeMetric(cardsByName, "Sleep REM Duration", "REM"),
       ],
+      visual: visualFromCard(
+        firstCard(cardsByName, ["Sleep Duration", "Sleep In Bed Duration", "Sleep Duration Goal"]),
+        "Sleep trend"
+      ),
       relatedSectionIds: maybeSections("sleep", "attention"),
       reportCount: 0,
     });
@@ -673,6 +744,7 @@ function buildSystemWidgets(input: {
         makeMetric(cardsByName, "Body Fat Percentage", "Body fat"),
         makeMetric(cardsByName, "Lean Body Mass", "Lean mass"),
       ],
+      visual: bodyCompositionVisual(cardsByName),
       relatedSectionIds: maybeSections("metabolic", "attention"),
       reportCount: 0,
     });

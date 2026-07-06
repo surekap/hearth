@@ -225,9 +225,9 @@ export default async function TimelinePage() {
 
   return (
     <div className="grid gap-6">
-      <section className="health-gradient -mx-4 -mt-6 grid gap-5 px-4 py-6 text-primary-foreground sm:rounded-b-lg md:mx-0 md:mt-0 md:rounded-lg md:px-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-2xl">
+      <section className="health-gradient -mx-4 -mt-6 grid min-w-0 gap-5 px-4 py-6 text-primary-foreground sm:rounded-b-lg md:mx-0 md:mt-0 md:rounded-lg md:px-6">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 max-w-2xl">
             <Badge className="mb-3 bg-white/14 text-white ring-1 ring-white/20" variant="secondary">
               {profile.displayName}&apos;s record
             </Badge>
@@ -278,13 +278,13 @@ export default async function TimelinePage() {
           {[...groups.entries()].map(([month, list]) => (
             <div key={month}>
               <h2 className="mb-2 text-sm font-semibold text-muted-foreground">{month}</h2>
-              <div className="grid gap-2 border-l-2 border-primary/15 pl-4">
+              <div className="grid min-w-0 gap-2 border-l-2 border-primary/15 pl-4">
                 {list.map((e, i) => {
                   const Icon = ICONS[e.kind];
                   return (
                     <Link key={`${month}-${i}`} href={e.href}>
                       <Card className="interactive-card py-3">
-                        <CardContent className="flex items-center gap-3 px-4">
+                        <CardContent className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
                           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-primary">
                             <Icon className="size-4" />
                           </span>
@@ -299,9 +299,11 @@ export default async function TimelinePage() {
                             </p>
                           </div>
                           {e.badge && (
-                            <Badge className={TONE[e.badge.tone]} variant="secondary">
-                              {e.badge.label}
-                            </Badge>
+                            <span className="col-start-2 justify-self-start sm:col-start-auto sm:justify-self-end">
+                              <Badge className={TONE[e.badge.tone]} variant="secondary">
+                                {e.badge.label}
+                              </Badge>
+                            </span>
                           )}
                         </CardContent>
                       </Card>

@@ -37,7 +37,7 @@ export function MainNav() {
   return (
     <nav
       aria-label="Primary"
-      className="scrollbar-none -mb-px flex gap-1 overflow-x-auto overscroll-x-contain"
+      className="scrollbar-none -mb-px flex max-w-full min-w-0 gap-1 overflow-x-auto overscroll-x-contain"
     >
       {items.map(({ href, label, icon: Icon }) => {
         const active = isActive(href);

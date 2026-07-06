@@ -68,8 +68,8 @@ export default async function DocumentsPage() {
 
   return (
     <div className="grid gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <Badge className="mb-2 bg-accent text-accent-foreground" variant="secondary">
             Library
           </Badge>
@@ -78,7 +78,7 @@ export default async function DocumentsPage() {
             {profile.displayName}&apos;s medical documents
           </p>
         </div>
-        <Button asChild>
+        <Button asChild className="max-sm:w-full">
           <Link href="/upload">
             <Upload className="size-4" />
             Upload
@@ -105,18 +105,20 @@ export default async function DocumentsPage() {
           {docs.map((d) => (
             <Link key={d.id} href={`/documents/${d.id}/review`}>
               <Card className="interactive-card py-3">
-                <CardContent className="flex items-center gap-4 px-4">
+                <CardContent className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent text-primary">
                     <FileText className="size-5" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{d.originalFilename}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="truncate text-xs text-muted-foreground">
                       {TYPE_LABELS[d.documentType]} · {d.source} ·{" "}
                       {d.documentDate ?? d.uploadedAt.toISOString().slice(0, 10)}
                     </p>
                   </div>
-                  {extractionBadge(d.extractionStatus, latestJobByDocumentId.get(d.id)?.status)}
+                  <span className="col-start-2 justify-self-start sm:col-start-auto sm:justify-self-end">
+                    {extractionBadge(d.extractionStatus, latestJobByDocumentId.get(d.id)?.status)}
+                  </span>
                 </CardContent>
               </Card>
             </Link>

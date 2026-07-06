@@ -47,6 +47,7 @@ export async function extractWithOpenAI(input: {
   mimeType: string;
   filename: string;
   documentTypeHint: string;
+  signal?: AbortSignal;
 }): Promise<ProviderOutput> {
   const client = new OpenAI();
   const model = extractionModel();
@@ -65,31 +66,34 @@ export async function extractWithOpenAI(input: {
           detail: "high" as const,
         };
 
-  const response = await client.responses.create({
-    model,
-    instructions: SYSTEM_PROMPT,
-    max_output_tokens: 16000,
-    input: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: `Uploaded document type hint: ${input.documentTypeHint}. Extract structured data from this medical document. Return the strict JSON only.`,
-          },
-          filePart,
-        ],
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "medical_extraction",
-        schema: OPENAI_JSON_SCHEMA as unknown as Record<string, unknown>,
-        strict: true,
+  const response = await client.responses.create(
+    {
+      model,
+      instructions: SYSTEM_PROMPT,
+      max_output_tokens: 16000,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: `Uploaded document type hint: ${input.documentTypeHint}. Extract structured data from this medical document. Return the strict JSON only.`,
+            },
+            filePart,
+          ],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "medical_extraction",
+          schema: OPENAI_JSON_SCHEMA as unknown as Record<string, unknown>,
+          strict: true,
+        },
       },
     },
-  });
+    { maxRetries: 0, signal: input.signal, timeout: 240_000 }
+  );
 
   const raw = response.output_text;
   const result = extractionResultSchema.parse(JSON.parse(raw));

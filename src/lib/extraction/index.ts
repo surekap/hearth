@@ -13,6 +13,7 @@ export function extractionProviderName(): "openai" | "mock" {
 type ProcessResult = { jobId: string; itemCount: number; warnings: string[] };
 
 const ACTIVE_JOB_STATUSES = ["pending", "processing", "needs_review"] as const;
+const EXTRACTION_TIMEOUT_MS = 240_000;
 
 export async function queueDocumentExtraction(
   documentId: string,
@@ -23,17 +24,35 @@ export async function queueDocumentExtraction(
   });
   if (!doc) throw new Error("Document not found");
 
+  if (options.force) {
+    await db
+      .update(schema.extractionJobs)
+      .set({
+        status: "failed",
+        error: "Replaced by a retry.",
+        completedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.extractionJobs.documentId, doc.id),
+          inArray(schema.extractionJobs.status, ["pending", "processing"])
+        )
+      );
+  }
+
   const reusableStatuses = options.force
-    ? (["pending", "processing"] as const)
+    ? ([] as const)
     : ACTIVE_JOB_STATUSES;
-  const existing = await db.query.extractionJobs.findFirst({
-    where: and(
-      eq(schema.extractionJobs.documentId, doc.id),
-      inArray(schema.extractionJobs.status, [...reusableStatuses])
-    ),
-    orderBy: [desc(schema.extractionJobs.createdAt)],
-  });
-  if (existing) return existing;
+  if (reusableStatuses.length > 0) {
+    const existing = await db.query.extractionJobs.findFirst({
+      where: and(
+        eq(schema.extractionJobs.documentId, doc.id),
+        inArray(schema.extractionJobs.status, [...reusableStatuses])
+      ),
+      orderBy: [desc(schema.extractionJobs.createdAt)],
+    });
+    if (existing) return existing;
+  }
 
   const [job] = await db
     .insert(schema.extractionJobs)
@@ -50,6 +69,14 @@ export async function queueDocumentExtraction(
     .update(schema.documents)
     .set({ ocrStatus: "pending", extractionStatus: "pending" })
     .where(eq(schema.documents.id, doc.id));
+
+  console.log("extraction queued", {
+    documentId: doc.id,
+    jobId: job.id,
+    documentType: doc.documentType,
+    filename: doc.originalFilename,
+    force: !!options.force,
+  });
 
   return job;
 }
@@ -80,16 +107,34 @@ export async function processExtractionJob(jobId: string): Promise<ProcessResult
 
   try {
     const provider = extractionProviderName();
+    console.log("extraction started", {
+      documentId: doc.id,
+      jobId: job.id,
+      provider,
+      documentType: doc.documentType,
+      filename: doc.originalFilename,
+    });
+
     let output: ProviderOutput;
     if (provider === "openai") {
       const encrypted = await getObject(doc.storageKey);
       const buffer = decryptBuffer(encrypted);
-      output = await extractWithOpenAI({
-        buffer,
-        mimeType: doc.mimeType,
-        filename: doc.originalFilename,
-        documentTypeHint: doc.documentType,
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort("Extraction exceeded 4 minutes."),
+        EXTRACTION_TIMEOUT_MS
+      );
+      try {
+        output = await extractWithOpenAI({
+          buffer,
+          mimeType: doc.mimeType,
+          filename: doc.originalFilename,
+          documentTypeHint: doc.documentType,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
     } else {
       output = await extractWithMock({
         filename: doc.originalFilename,
@@ -197,9 +242,23 @@ export async function processExtractionJob(jobId: string): Promise<ProcessResult
       })
       .where(eq(schema.extractionJobs.id, job.id));
 
+    console.log("extraction completed", {
+      documentId: doc.id,
+      jobId: job.id,
+      provider,
+      model: output.model,
+      itemCount: itemValues.length,
+      warnings: result.warnings.length,
+    });
+
     return { jobId: job.id, itemCount: itemValues.length, warnings: result.warnings };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const message =
+      e instanceof Error && e.name === "AbortError"
+        ? "Extraction exceeded 4 minutes."
+        : e instanceof Error
+          ? e.message
+          : String(e);
     await db
       .update(schema.extractionJobs)
       .set({ status: "failed", error: message, completedAt: new Date() })
@@ -208,6 +267,12 @@ export async function processExtractionJob(jobId: string): Promise<ProcessResult
       .update(schema.documents)
       .set({ ocrStatus: "failed", extractionStatus: "failed" })
       .where(eq(schema.documents.id, doc.id));
+    console.error("extraction failed", {
+      documentId: doc.id,
+      jobId: job.id,
+      error: message,
+      cause: e,
+    });
     throw e;
   }
 }
@@ -235,7 +300,7 @@ export async function drainExtractionQueue(options: { limit?: number } = {}) {
         or (
           status = 'processing'
           and completed_at is null
-          and created_at < now() - interval '15 minutes'
+          and created_at < now() - interval '5 minutes'
         )
       order by created_at asc
       for update skip locked

@@ -3,11 +3,19 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
+  Activity,
   AlertTriangle,
+  Bed,
   CalendarDays,
+  CircleGauge,
   ClipboardList,
+  Droplets,
+  Dumbbell,
+  Eye,
+  HeartPulse,
   Minus,
   Pill,
+  Smile,
   Stethoscope,
   TrendingDown,
   TrendingUp,
@@ -29,6 +37,7 @@ import type {
   AdaptiveDashboardData,
   DashboardFocus,
   DashboardMarker,
+  DashboardSystemWidget,
   MetricCard,
 } from "@/lib/dashboard";
 
@@ -61,6 +70,238 @@ function reasonTone(reason: string | null) {
   if (reason === "rising") return "bg-[var(--warning)]/20 text-[color-mix(in_oklch,var(--warning),black_45%)]";
   if (reason === "falling") return "bg-[var(--success)]/15 text-[color-mix(in_oklch,var(--success),black_32%)]";
   return "bg-secondary text-secondary-foreground";
+}
+
+function systemTone(tone: DashboardSystemWidget["tone"]) {
+  if (tone === "danger") return "border-destructive/35 bg-destructive/5";
+  if (tone === "warning") return "border-[var(--warning)]/45 bg-[var(--warning)]/10";
+  if (tone === "success") return "border-[var(--success)]/35 bg-[var(--success)]/8";
+  return "bg-card/95";
+}
+
+function metricStatusTone(status: DashboardSystemWidget["metrics"][number]["status"]) {
+  if (status === "attention") return "border-destructive/25 bg-destructive/8";
+  if (status === "watch") return "border-[var(--warning)]/35 bg-[var(--warning)]/10";
+  if (status === "normal") return "border-[var(--success)]/25 bg-[var(--success)]/8";
+  return "border-border bg-muted/35";
+}
+
+function SystemIcon({ id }: { id: string }) {
+  if (id === "cardiovascular") return <HeartPulse className="size-5 text-primary" />;
+  if (id === "blood-counts") return <Droplets className="size-5 text-destructive" />;
+  if (id === "sleep") return <Bed className="size-5 text-primary" />;
+  if (id === "body-composition") {
+    return <Dumbbell className="size-5 text-[color-mix(in_oklch,var(--success),black_22%)]" />;
+  }
+  if (id === "metabolic") {
+    return <Activity className="size-5 text-[color-mix(in_oklch,var(--warning),black_22%)]" />;
+  }
+  if (id === "eyes") return <Eye className="size-5 text-primary" />;
+  if (id === "dental") {
+    return <Smile className="size-5 text-[color-mix(in_oklch,var(--success),black_22%)]" />;
+  }
+  return <Stethoscope className="size-5 text-primary" />;
+}
+
+function metricByLabel(widget: DashboardSystemWidget, label: string) {
+  return widget.metrics.find((metric) => metric.label === label);
+}
+
+function MiniCallout({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-md border border-white/45 bg-white/70 px-2.5 py-2 text-foreground shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/10">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 truncate text-sm font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function PulseGraphic({ widget }: { widget: DashboardSystemWidget }) {
+  const ldl = metricByLabel(widget, "LDL");
+  const hba1c = metricByLabel(widget, "HbA1c");
+
+  return (
+    <div className="relative min-h-36 overflow-hidden rounded-lg border border-white/50 bg-[linear-gradient(135deg,oklch(0.95_0.04_205),oklch(0.99_0.018_27))] p-4 dark:border-white/10 dark:bg-[linear-gradient(135deg,oklch(0.28_0.055_225),oklch(0.2_0.045_252))]">
+      <div className="absolute inset-x-4 top-1/2 h-px bg-white/70 dark:bg-white/15" />
+      <div className="absolute left-4 right-4 top-10 flex h-16 items-end gap-1">
+        {[24, 42, 30, 68, 34, 28, 76, 46, 36, 58, 82, 44, 32, 66, 38, 54].map((height, index) => (
+          <span
+            key={index}
+            className="flex-1 rounded-full bg-primary/45 shadow-sm"
+            style={{ height: `${height}%` }}
+          />
+        ))}
+      </div>
+      <div className="absolute bottom-3 left-3 right-3 grid grid-cols-2 gap-2">
+        <MiniCallout label="LDL" value={ldl?.value ?? "No data"} />
+        <MiniCallout label="HbA1c" value={hba1c?.value ?? "No data"} />
+      </div>
+    </div>
+  );
+}
+
+function SleepGraphic({ widget }: { widget: DashboardSystemWidget }) {
+  const asleep = metricByLabel(widget, "Asleep");
+  const deep = metricByLabel(widget, "Deep");
+  const rem = metricByLabel(widget, "REM");
+
+  return (
+    <div className="relative min-h-36 overflow-hidden rounded-lg border border-white/50 bg-[linear-gradient(135deg,oklch(0.28_0.07_260),oklch(0.48_0.09_235))] p-4 text-white shadow-inner dark:border-white/10">
+      <div className="absolute right-5 top-4 size-10 rounded-full bg-white/90 shadow-[0_0_24px_oklch(0.9_0.05_95/45%)]" />
+      <div className="relative grid gap-1">
+        <p className="text-xs uppercase text-white/70">Last sleep</p>
+        <p className="text-3xl font-semibold tabular-nums">{asleep?.value ?? "No data"}</p>
+      </div>
+      <div className="absolute bottom-4 left-4 right-4 grid grid-cols-7 items-end gap-1.5">
+        {[42, 60, 35, 75, 54, 88, 64].map((height, index) => (
+          <span
+            key={index}
+            className="rounded-full bg-white/45"
+            style={{ height: `${height}px` }}
+          />
+        ))}
+      </div>
+      <div className="absolute bottom-4 left-4 right-4 flex justify-between text-[11px] text-white/80">
+        <span>{deep?.value ?? "Deep"}</span>
+        <span>{rem?.value ?? "REM"}</span>
+      </div>
+    </div>
+  );
+}
+
+function BodyCompositionGraphic({ widget }: { widget: DashboardSystemWidget }) {
+  const bmi = metricByLabel(widget, "BMI");
+  const bmr = metricByLabel(widget, "BMR");
+  const fat = metricByLabel(widget, "Body fat");
+  const lean = metricByLabel(widget, "Lean mass");
+
+  return (
+    <div className="relative min-h-36 overflow-hidden rounded-lg border border-white/50 bg-[linear-gradient(135deg,oklch(0.95_0.045_150),oklch(0.99_0.025_82))] p-4 dark:border-white/10 dark:bg-[linear-gradient(135deg,oklch(0.23_0.045_155),oklch(0.2_0.04_95))]">
+      <div className="grid grid-cols-[7rem_1fr] gap-4">
+        <div
+          className="grid aspect-square place-items-center rounded-full border border-white/65 shadow-inner"
+          style={{
+            background:
+              "conic-gradient(var(--success) 0 58%, oklch(0.89 0.03 145) 58% 72%, oklch(0.82 0.08 80) 72% 100%)",
+          }}
+        >
+          <div className="grid size-20 place-items-center rounded-full bg-card/90 text-center shadow-sm">
+            <CircleGauge className="mx-auto size-5 text-primary" />
+            <span className="text-xs font-semibold">Body</span>
+          </div>
+        </div>
+        <div className="grid content-center gap-2">
+          <MiniCallout label="BMI" value={bmi?.value ?? "No data"} />
+          <MiniCallout label="BMR" value={bmr?.value ?? "No data"} />
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <MiniCallout label="Fat" value={fat?.value ?? "No data"} />
+        <MiniCallout label="Lean mass" value={lean?.value ?? "No data"} />
+      </div>
+    </div>
+  );
+}
+
+function SystemGraphic({ widget }: { widget: DashboardSystemWidget }) {
+  if (widget.id === "cardiovascular") return <PulseGraphic widget={widget} />;
+  if (widget.id === "sleep") return <SleepGraphic widget={widget} />;
+  if (widget.id === "body-composition") return <BodyCompositionGraphic widget={widget} />;
+
+  return (
+    <div className="relative min-h-36 overflow-hidden rounded-lg border border-white/50 bg-[linear-gradient(135deg,oklch(0.96_0.025_226),oklch(0.99_0.018_185))] p-4 dark:border-white/10 dark:bg-[linear-gradient(135deg,oklch(0.24_0.045_240),oklch(0.18_0.038_252))]">
+      <div className="grid h-full grid-cols-[5rem_1fr] gap-4">
+        <div className="grid place-items-center">
+          <div className="grid size-20 place-items-center rounded-full border border-white/60 bg-white/55 shadow-inner backdrop-blur-md dark:border-white/10 dark:bg-white/10">
+            <SystemIcon id={widget.id} />
+          </div>
+        </div>
+        <div className="grid content-center gap-2">
+          {widget.metrics.slice(0, 2).map((metric) => (
+            <MiniCallout key={`${widget.id}-callout-${metric.label}`} label={metric.label} value={metric.value} />
+          ))}
+        </div>
+      </div>
+      <div className="absolute bottom-3 left-4 right-4 flex items-end gap-1">
+        {[36, 62, 44, 72, 52, 68, 40, 58, 76, 48, 66, 54].map((height, index) => (
+          <span
+            key={index}
+            className="h-10 flex-1 rounded-full bg-primary/20"
+            style={{ height: `${height / 2}px` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SystemWidgetCard({ widget }: { widget: DashboardSystemWidget }) {
+  const firstSection = widget.relatedSectionIds[0];
+
+  return (
+    <Card className={cn("interactive-card overflow-hidden py-0", systemTone(widget.tone))}>
+      <div className="p-3 pb-0">
+        <SystemGraphic widget={widget} />
+      </div>
+      <CardHeader className="px-4 pb-0">
+        <CardTitle className="grid gap-3">
+          <span className="flex items-start justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-md border bg-background/70">
+                <SystemIcon id={widget.id} />
+              </span>
+              <span className="grid min-w-0 gap-0.5">
+                <span className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
+                  {widget.eyebrow}
+                </span>
+                <span className="truncate text-base font-semibold">{widget.title}</span>
+              </span>
+            </span>
+            {widget.reportCount > 0 && (
+              <Badge variant="secondary">{widget.reportCount} reports</Badge>
+            )}
+          </span>
+          <span className="text-sm font-medium leading-5">{widget.summary}</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3 px-4">
+        <p className="text-sm leading-5 text-muted-foreground">{widget.detail}</p>
+        <div className="grid grid-cols-2 gap-2">
+          {widget.metrics.map((metric) => (
+            <div
+              key={`${widget.id}-${metric.label}`}
+              className={cn("min-w-0 rounded-md border p-2.5", metricStatusTone(metric.status))}
+            >
+              <p className="truncate text-xs text-muted-foreground">{metric.label}</p>
+              <p className="mt-1 truncate text-sm font-semibold tabular-nums">{metric.value}</p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">{metric.detail}</p>
+            </div>
+          ))}
+        </div>
+        {firstSection ? (
+          <Link
+            href={`#${firstSection}`}
+            className="text-sm font-semibold text-primary underline-offset-4 hover:underline"
+          >
+            Drill into measurements
+          </Link>
+        ) : (
+          <Link
+            href="/documents"
+            className="text-sm font-semibold text-primary underline-offset-4 hover:underline"
+          >
+            Review source reports
+          </Link>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function MetricChart({ card }: { card: MetricCard }) {
@@ -251,19 +492,46 @@ export function DashboardView({
           </CardContent>
         </Card>
       ) : (
-        data.sections.map((section) => (
-          <section key={section.id} className="grid gap-3">
+        <>
+          {data.systemWidgets.length > 0 && (
+            <section className="grid gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Body systems</h2>
+                <p className="text-sm text-muted-foreground">
+                  Plain-language widgets combine related numbers before the detailed charts.
+                </p>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {data.systemWidgets.map((widget) => (
+                  <SystemWidgetCard key={widget.id} widget={widget} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="grid gap-3">
             <div>
-              <h2 className="text-lg font-semibold">{section.title}</h2>
-              <p className="text-sm text-muted-foreground">{section.description}</p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {section.cards.map((card) => (
-                <MetricCardView key={`${section.id}-${card.name}`} card={card} />
-              ))}
+              <h2 className="text-lg font-semibold">Detailed measurements</h2>
+              <p className="text-sm text-muted-foreground">
+                Drill-down charts remain available for every confirmed value in this range.
+              </p>
             </div>
           </section>
-        ))
+
+          {data.sections.map((section) => (
+            <section key={section.id} id={section.id} className="scroll-mt-24 grid gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">{section.title}</h2>
+                <p className="text-sm text-muted-foreground">{section.description}</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {section.cards.map((card) => (
+                  <MetricCardView key={`${section.id}-${card.name}`} card={card} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </>
       )}
 
       {hasMetabolicSignals && (

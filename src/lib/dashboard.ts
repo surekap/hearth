@@ -128,6 +128,25 @@ export type DashboardReportGroup = {
   latestSummary: string | null;
 };
 
+export type DashboardSystemMetric = {
+  label: string;
+  value: string;
+  detail: string;
+  status: "normal" | "watch" | "attention" | "unknown";
+};
+
+export type DashboardSystemWidget = {
+  id: string;
+  title: string;
+  eyebrow: string;
+  summary: string;
+  detail: string;
+  tone: "neutral" | "warning" | "danger" | "success";
+  metrics: DashboardSystemMetric[];
+  relatedSectionIds: string[];
+  reportCount: number;
+};
+
 export type DashboardMarker = {
   date: string;
   label: string;
@@ -137,6 +156,7 @@ export type DashboardMarker = {
 export type AdaptiveDashboardData = {
   range: DashboardRange;
   focus: DashboardFocus[];
+  systemWidgets: DashboardSystemWidget[];
   sections: DashboardSection[];
   derived: {
     astAltRatio: number | null;
@@ -330,6 +350,357 @@ function buildSections(cards: MetricCard[]): DashboardSection[] {
 
   sections.push(...categorySections);
   return sections;
+}
+
+function formatMetricValue(card: MetricCard | undefined) {
+  if (!card?.latest) return "No data";
+  if (card.name === "Body Fat Percentage" && card.unit === "%" && card.latest.value > 0 && card.latest.value < 1) {
+    return `${Number((card.latest.value * 100).toFixed(1))}%`;
+  }
+  if (card.name === "BMI") return String(card.latest.value);
+  return `${card.latest.value}${card.unit ? ` ${card.unit}` : ""}`;
+}
+
+function metricStatus(card: MetricCard | undefined): DashboardSystemMetric["status"] {
+  if (!card?.latest) return "unknown";
+  if (card.latest.interpretation === "critical" || isAbnormal(card.latest.interpretation)) {
+    return "attention";
+  }
+  if (card.trend && card.trend !== "flat") return "watch";
+  if (card.latest.interpretation === "normal") return "normal";
+  return "unknown";
+}
+
+function plainTrend(card: MetricCard | undefined) {
+  if (!card?.trend || card.trend === "flat") return "latest value";
+  return `${card.trend} trend`;
+}
+
+function makeMetric(cardsByName: Map<string, MetricCard>, name: string, label = name): DashboardSystemMetric {
+  const card = cardsByName.get(name);
+  return {
+    label,
+    value: formatMetricValue(card),
+    detail: card?.latest ? plainTrend(card) : "not measured yet",
+    status: metricStatus(card),
+  };
+}
+
+function summarizeSystem(input: {
+  availableCards: MetricCard[];
+  abnormalCards: MetricCard[];
+  watchCards: MetricCard[];
+  normalLabel: string;
+  attentionLabel: string;
+  watchLabel: string;
+  missingLabel: string;
+}) {
+  if (input.availableCards.length === 0) return input.missingLabel;
+  if (input.abnormalCards.length > 0) {
+    return `${input.attentionLabel}: ${input.abnormalCards
+      .slice(0, 3)
+      .map((c) => c.name)
+      .join(", ")}.`;
+  }
+  if (input.watchCards.length > 0) {
+    return `${input.watchLabel}: ${input.watchCards
+      .slice(0, 3)
+      .map((c) => c.name)
+      .join(", ")}.`;
+  }
+  return input.normalLabel;
+}
+
+function widgetTone(cards: MetricCard[], reportGroups: DashboardReportGroup[] = []): DashboardSystemWidget["tone"] {
+  if (cards.some((c) => c.latest?.interpretation === "critical" || isAbnormal(c.latest?.interpretation))) {
+    return "danger";
+  }
+  if (cards.some((c) => c.trend && c.trend !== "flat") || reportGroups.some((g) => g.followUpCount > 0)) {
+    return "warning";
+  }
+  if (cards.some((c) => c.latest) || reportGroups.length > 0) return "success";
+  return "neutral";
+}
+
+function reportGroupMatches(group: DashboardReportGroup, terms: string[]) {
+  const haystack = `${group.key} ${group.label}`.toLowerCase();
+  return terms.some((term) => haystack.includes(term));
+}
+
+function reportSystemWidget(input: {
+  id: string;
+  title: string;
+  eyebrow: string;
+  terms: string[];
+  reportGroups: DashboardReportGroup[];
+  defaultSummary: string;
+  defaultDetail: string;
+}): DashboardSystemWidget | null {
+  const groups = input.reportGroups.filter((group) => reportGroupMatches(group, input.terms));
+  if (groups.length === 0) return null;
+  const followUps = groups.reduce((sum, group) => sum + group.followUpCount, 0);
+  const reportCount = groups.reduce((sum, group) => sum + group.count, 0);
+  const latest = groups
+    .map((group) => group.latestDate)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+
+  return {
+    id: input.id,
+    title: input.title,
+    eyebrow: input.eyebrow,
+    summary:
+      followUps > 0
+        ? `${followUps} follow-up item${followUps === 1 ? "" : "s"} flagged in recent reports.`
+        : input.defaultSummary,
+    detail: groups[0]?.latestSummary ?? input.defaultDetail,
+    tone: followUps > 0 ? "warning" : "success",
+    metrics: [
+      {
+        label: "Reports",
+        value: String(reportCount),
+        detail: latest
+          ? `latest ${new Date(latest).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
+          : "available",
+        status: followUps > 0 ? "watch" : "normal",
+      },
+    ],
+    relatedSectionIds: [],
+    reportCount,
+  };
+}
+
+function buildSystemWidgets(input: {
+  cards: MetricCard[];
+  sections: DashboardSection[];
+  reportGroups: DashboardReportGroup[];
+  derived: AdaptiveDashboardData["derived"];
+}): DashboardSystemWidget[] {
+  const cardsByName = new Map(input.cards.map((card) => [card.name, card]));
+  const sectionIds = new Set(input.sections.map((section) => section.id));
+  const cardsIn = (categories: string[]) => input.cards.filter((card) => categories.includes(card.category));
+  const abnormalIn = (cards: MetricCard[]) => cards.filter((card) => isAbnormal(card.latest?.interpretation));
+  const watchIn = (cards: MetricCard[]) => cards.filter((card) => card.trend && card.trend !== "flat");
+  const hasSection = (id: string) => sectionIds.has(id);
+  const maybeSections = (...ids: string[]) => ids.filter(hasSection);
+
+  const cardiovascularCards = [
+    ...cardsIn(["cardiovascular", "cardiac", "lipid"]),
+    ...["HbA1c", "Fasting Glucose", "CRP", "BMI"].map((name) => cardsByName.get(name)).filter(Boolean),
+  ] as MetricCard[];
+  const bloodCards = cardsIn(["hematology", "coagulation"]);
+  const kidneyCards = cardsIn(["renal", "urine"]);
+  const metabolicCards = cardsIn(["liver", "glucose", "body", "inflammation"]);
+  const sleepCards = cardsIn(["sleep"]);
+  const bodyCompositionCards = [
+    ...[
+      "BMI",
+      "Basal Energy Burned",
+      "Body Fat Percentage",
+      "Lean Body Mass",
+      "Weight",
+      "Waist Circumference",
+    ]
+      .map((name) => cardsByName.get(name))
+      .filter(Boolean),
+  ] as MetricCard[];
+
+  const widgets: DashboardSystemWidget[] = [];
+
+  if (cardiovascularCards.length > 0) {
+    widgets.push({
+      id: "cardiovascular",
+      title: "Heart & circulation",
+      eyebrow: "Cardiovascular",
+      summary: summarizeSystem({
+        availableCards: cardiovascularCards,
+        abnormalCards: abnormalIn(cardiovascularCards),
+        watchCards: watchIn(cardiovascularCards),
+        normalLabel: "Heart-related markers look steady in the latest confirmed data.",
+        attentionLabel: "Worth reviewing",
+        watchLabel: "Changing over time",
+        missingLabel: "Add blood pressure, pulse, lipids or glucose to build this view.",
+      }),
+      detail:
+        "Blood pressure, pulse, cholesterol and glucose are shown together because they often move risk in the same direction.",
+      tone: widgetTone(cardiovascularCards),
+      metrics: [
+        makeMetric(cardsByName, "Blood Pressure Systolic", "Systolic BP"),
+        makeMetric(cardsByName, "Blood Pressure Diastolic", "Diastolic BP"),
+        makeMetric(cardsByName, "LDL"),
+        makeMetric(cardsByName, "HbA1c"),
+      ],
+      relatedSectionIds: maybeSections("cardiovascular", "metabolic", "attention"),
+      reportCount: 0,
+    });
+  }
+
+  if (bloodCards.length > 0) {
+    widgets.push({
+      id: "blood-counts",
+      title: "Blood counts",
+      eyebrow: "CBC",
+      summary: summarizeSystem({
+        availableCards: bloodCards,
+        abnormalCards: abnormalIn(bloodCards),
+        watchCards: watchIn(bloodCards),
+        normalLabel: "The latest blood count markers are not currently flagged.",
+        attentionLabel: "Blood count values to review",
+        watchLabel: "Blood count values changing",
+        missingLabel: "Add a complete blood count to build this view.",
+      }),
+      detail:
+        "Hemoglobin reflects oxygen-carrying capacity, white cells reflect immune activity, and platelets help clotting.",
+      tone: widgetTone(bloodCards),
+      metrics: [
+        makeMetric(cardsByName, "Hemoglobin"),
+        makeMetric(cardsByName, "WBC Count", "White cells"),
+        makeMetric(cardsByName, "Platelet Count", "Platelets"),
+        makeMetric(cardsByName, "Ferritin"),
+      ],
+      relatedSectionIds: maybeSections("hematology", "attention"),
+      reportCount: 0,
+    });
+  }
+
+  if (kidneyCards.length > 0) {
+    widgets.push({
+      id: "kidney",
+      title: "Kidney & urine",
+      eyebrow: "Renal",
+      summary: summarizeSystem({
+        availableCards: kidneyCards,
+        abnormalCards: abnormalIn(kidneyCards),
+        watchCards: watchIn(kidneyCards),
+        normalLabel: "Kidney filtration and urine markers are not currently flagged.",
+        attentionLabel: "Kidney markers to review",
+        watchLabel: "Kidney markers changing",
+        missingLabel: "Add creatinine, eGFR or urine markers to build this view.",
+      }),
+      detail:
+        "Creatinine and eGFR describe filtration, while urine markers can show leakage or irritation before symptoms appear.",
+      tone: widgetTone(kidneyCards),
+      metrics: [
+        makeMetric(cardsByName, "Creatinine"),
+        makeMetric(cardsByName, "eGFR"),
+        makeMetric(cardsByName, "Urea"),
+        makeMetric(cardsByName, "Urine Albumin Creatinine Ratio", "Urine ACR"),
+      ],
+      relatedSectionIds: maybeSections("metabolic", "renal", "urine", "attention"),
+      reportCount: 0,
+    });
+  }
+
+  if (metabolicCards.length > 0) {
+    widgets.push({
+      id: "metabolic",
+      title: "Metabolic & liver",
+      eyebrow: "Energy systems",
+      summary: summarizeSystem({
+        availableCards: metabolicCards,
+        abnormalCards: abnormalIn(metabolicCards),
+        watchCards: watchIn(metabolicCards),
+        normalLabel: "Glucose, liver and inflammation markers look steady in the latest data.",
+        attentionLabel: "Metabolic markers to review",
+        watchLabel: "Metabolic markers changing",
+        missingLabel: "Add glucose, liver enzymes or body measures to build this view.",
+      }),
+      detail:
+        input.derived.tgHdlRatio != null
+          ? `TG/HDL is ${input.derived.tgHdlRatio}, which links fats in the blood with insulin and energy handling.`
+          : "Glucose, weight, liver enzymes and inflammation are grouped because they often influence each other.",
+      tone: widgetTone(metabolicCards),
+      metrics: [
+        makeMetric(cardsByName, "HbA1c"),
+        makeMetric(cardsByName, "ALT"),
+        makeMetric(cardsByName, "Triglycerides"),
+        makeMetric(cardsByName, "CRP"),
+      ],
+      relatedSectionIds: maybeSections("metabolic", "attention"),
+      reportCount: 0,
+    });
+  }
+
+  if (sleepCards.length > 0) {
+    widgets.push({
+      id: "sleep",
+      title: "Sleep & recovery",
+      eyebrow: "Sleep tracking",
+      summary: summarizeSystem({
+        availableCards: sleepCards,
+        abnormalCards: abnormalIn(sleepCards),
+        watchCards: watchIn(sleepCards),
+        normalLabel: "Sleep duration and stages look steady in the latest data.",
+        attentionLabel: "Sleep markers to review",
+        watchLabel: "Sleep markers changing",
+        missingLabel: "Add sleep duration and stage data to build this view.",
+      }),
+      detail:
+        "Time asleep, time in bed, deep sleep and REM are grouped to show whether recovery is actually happening overnight.",
+      tone: widgetTone(sleepCards),
+      metrics: [
+        makeMetric(cardsByName, "Sleep Duration", "Asleep"),
+        makeMetric(cardsByName, "Sleep Duration Goal", "Goal"),
+        makeMetric(cardsByName, "Sleep Deep Duration", "Deep"),
+        makeMetric(cardsByName, "Sleep REM Duration", "REM"),
+      ],
+      relatedSectionIds: maybeSections("sleep", "attention"),
+      reportCount: 0,
+    });
+  }
+
+  if (bodyCompositionCards.length > 0) {
+    widgets.push({
+      id: "body-composition",
+      title: "Body composition",
+      eyebrow: "BMI, BMR & muscle/fat",
+      summary: summarizeSystem({
+        availableCards: bodyCompositionCards,
+        abnormalCards: abnormalIn(bodyCompositionCards),
+        watchCards: watchIn(bodyCompositionCards),
+        normalLabel: "Body composition markers look steady in the latest data.",
+        attentionLabel: "Body composition markers to review",
+        watchLabel: "Body composition changing",
+        missingLabel: "Add BMI, BMR, fat or lean mass to build this view.",
+      }),
+      detail:
+        "BMI, resting energy burn, fat percentage and lean mass are shown together so weight changes are easier to understand.",
+      tone: widgetTone(bodyCompositionCards),
+      metrics: [
+        makeMetric(cardsByName, "BMI"),
+        makeMetric(cardsByName, "Basal Energy Burned", "BMR"),
+        makeMetric(cardsByName, "Body Fat Percentage", "Body fat"),
+        makeMetric(cardsByName, "Lean Body Mass", "Lean mass"),
+      ],
+      relatedSectionIds: maybeSections("metabolic", "attention"),
+      reportCount: 0,
+    });
+  }
+
+  const reportWidgets = [
+    reportSystemWidget({
+      id: "dental",
+      title: "Dental",
+      eyebrow: "Mouth & teeth",
+      terms: ["dental", "dentist", "oral", "orthodont", "periodont"],
+      reportGroups: input.reportGroups,
+      defaultSummary: "Dental reports are available for review.",
+      defaultDetail: "Dental notes sit beside lab data so mouth health is not hidden in a document list.",
+    }),
+    reportSystemWidget({
+      id: "eyes",
+      title: "Eyes",
+      eyebrow: "Ophthalmic",
+      terms: ["ophthalm", "eye", "vision", "retina", "optometry"],
+      reportGroups: input.reportGroups,
+      defaultSummary: "Eye reports are available for review.",
+      defaultDetail: "Eye findings are summarized here and can be reviewed from the source report.",
+    }),
+  ].filter(Boolean) as DashboardSystemWidget[];
+
+  widgets.push(...reportWidgets);
+  return widgets.slice(0, 10);
 }
 
 function buildFocus(input: {
@@ -560,10 +931,12 @@ export async function getAdaptiveDashboardData(
 
   const markers = await loadMarkers(profileId, start);
   const focus = buildFocus({ cards, rows, reportGroups });
+  const systemWidgets = buildSystemWidgets({ cards, sections, reportGroups, derived });
 
   return {
     range,
     focus,
+    systemWidgets,
     sections,
     derived,
     reportGroups,

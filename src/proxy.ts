@@ -8,6 +8,6 @@ export default auth;
 export const config = {
   // Protect everything except NextAuth routes, static assets, and PWA files.
   matcher: [
-    "/((?!api/auth|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|logo.png|icon.png|icons|apple-touch-icon).*)",
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|logo.png|icon.png|icons|images|apple-touch-icon).*)",
   ],
 };

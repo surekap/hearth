@@ -247,6 +247,7 @@ function SystemGraphic({ widget }: { widget: DashboardSystemWidget }) {
             sizes="(max-width: 1024px) 100vw, 50vw"
             src={media.image}
             style={{ objectPosition: media.position }}
+            unoptimized
           />
         )}
         <div

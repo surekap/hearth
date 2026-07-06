@@ -14,6 +14,7 @@ type ProcessResult = { jobId: string; itemCount: number; warnings: string[] };
 
 const ACTIVE_JOB_STATUSES = ["pending", "processing", "needs_review"] as const;
 const EXTRACTION_TIMEOUT_MS = 240_000;
+const STALE_PROCESSING_MINUTES = 5;
 
 export async function queueDocumentExtraction(
   documentId: string,
@@ -288,6 +289,7 @@ export async function processDocument(documentId: string) {
 }
 
 export async function drainExtractionQueue(options: { limit?: number } = {}) {
+  const failedStaleJobs = await failStaleExtractionJobs();
   const limit = options.limit ?? 3;
   const result = await db.execute<{ id: string }>(sql`
     update extraction_jobs
@@ -297,11 +299,6 @@ export async function drainExtractionQueue(options: { limit?: number } = {}) {
       from extraction_jobs
       where
         status = 'pending'
-        or (
-          status = 'processing'
-          and completed_at is null
-          and created_at < now() - interval '5 minutes'
-        )
       order by created_at asc
       for update skip locked
       limit ${limit}
@@ -318,9 +315,37 @@ export async function drainExtractionQueue(options: { limit?: number } = {}) {
       console.error("queued extraction failed", { jobId: row.id, error: e });
     }
   }
-  return processed;
+  return { failedStaleJobs, processed };
 }
 
 export function scheduleExtractionQueueDrain(options: { limit?: number } = {}) {
   drainExtractionQueue(options).catch((e) => console.error("extraction queue drain failed", e));
+}
+
+export async function failStaleExtractionJobs(options: { minutes?: number } = {}) {
+  const minutes = options.minutes ?? STALE_PROCESSING_MINUTES;
+  const result = await db.execute<{ id: string; document_id: string }>(sql`
+    update extraction_jobs
+    set
+      status = 'failed',
+      error = ${`Extraction did not complete within ${minutes} minutes.`},
+      completed_at = now()
+    where
+      status = 'processing'
+      and completed_at is null
+      and created_at < now() - (${minutes} * interval '1 minute')
+    returning id, document_id
+  `);
+
+  const rows = result.rows as { id: string; document_id: string }[];
+  for (const row of rows) {
+    await db
+      .update(schema.documents)
+      .set({ ocrStatus: "failed", extractionStatus: "failed" })
+      .where(eq(schema.documents.id, row.document_id));
+  }
+  if (rows.length > 0) {
+    console.error("stale extraction jobs failed", { count: rows.length, jobs: rows });
+  }
+  return rows;
 }

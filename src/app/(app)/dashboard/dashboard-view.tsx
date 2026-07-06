@@ -21,6 +21,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import {
+  CartesianGrid as RechartsCartesianGrid,
   Line as RechartsLine,
   LineChart as RechartsLineChart,
   ReferenceLine as RechartsReferenceLine,
@@ -157,8 +158,18 @@ function MiniCallout({
   );
 }
 
+function formatChartTick(value: number) {
+  const abs = Math.abs(value);
+  const fractionDigits = abs > 0 && abs < 10 ? 1 : 0;
+  return Number(value.toFixed(fractionDigits)).toLocaleString("en-IN");
+}
+
 function WidgetMiniChart({ widget }: { widget: DashboardSystemWidget }) {
-  const points = widget.visual.points.map((value, index) => ({ index, value }));
+  const points = widget.visual.points.map((value, index) => ({
+    index,
+    label: widget.visual.pointLabels[index] ?? String(index + 1),
+    value,
+  }));
 
   if (points.length < 2) {
     return (
@@ -168,11 +179,47 @@ function WidgetMiniChart({ widget }: { widget: DashboardSystemWidget }) {
     );
   }
 
+  const values = points.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const domain: [number | "auto", number | "auto"] =
+    min === max ? [min - 1, max + 1] : ["auto", "auto"];
+  const xTicks = [0, points.length - 1];
+
   return (
-    <div className="h-20">
+    <div className="h-28">
       <RechartsResponsiveContainer width="100%" height="100%">
-        <RechartsLineChart data={points} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-          <RechartsYAxis hide domain={["auto", "auto"]} />
+        <RechartsLineChart data={points} margin={{ top: 6, right: 8, bottom: 6, left: 0 }}>
+          <RechartsCartesianGrid stroke="currentColor" strokeDasharray="3 3" strokeOpacity={0.16} vertical={false} />
+          <RechartsXAxis
+            axisLine={{ stroke: "currentColor", strokeOpacity: 0.24 }}
+            dataKey="index"
+            domain={[0, points.length - 1]}
+            tick={{ fill: "currentColor", fontSize: 10 }}
+            tickFormatter={(value) => points[Number(value)]?.label ?? ""}
+            tickLine={false}
+            ticks={xTicks}
+            type="number"
+          />
+          <RechartsYAxis
+            axisLine={false}
+            domain={domain}
+            tick={{ fill: "currentColor", fontSize: 10 }}
+            tickFormatter={(value) => formatChartTick(Number(value))}
+            tickLine={false}
+            tickCount={3}
+            width={38}
+          />
+          <RechartsTooltip
+            formatter={(value) => [formatChartTick(Number(value)), widget.visual.label]}
+            labelFormatter={(index) => points[Number(index)]?.label ?? ""}
+            contentStyle={{
+              fontSize: 12,
+              borderRadius: 8,
+              borderColor: "var(--border)",
+              boxShadow: "0 12px 30px oklch(0.19 0.035 252 / 12%)",
+            }}
+          />
           <RechartsLine
             type="monotone"
             dataKey="value"

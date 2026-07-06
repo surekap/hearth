@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireUser, requireProfile, handleApiError, ApiError, logAudit } from "@/lib/api";
-import { processDocument } from "@/lib/extraction";
+import { queueDocumentExtraction, scheduleExtractionQueueDrain } from "@/lib/extraction";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -19,18 +19,19 @@ export async function POST(
     if (!doc) throw new ApiError(404, "Document not found");
     await requireProfile(userId, doc.profileId);
 
-    const result = await processDocument(id);
+    const job = await queueDocumentExtraction(id, { force: true });
+    after(() => scheduleExtractionQueueDrain({ limit: 3 }));
 
     await logAudit({
       userId,
       profileId: doc.profileId,
-      action: "extract",
+      action: "queue_extraction",
       targetType: "document",
       targetId: id,
-      detail: result,
+      detail: { jobId: job.id, status: job.status },
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({ jobId: job.id, status: job.status }, { status: 202 });
   } catch (e) {
     return handleApiError(e);
   }

@@ -51,7 +51,8 @@ Use iOS Shortcuts:
 Share PDF/image from Apollo / WhatsApp / Files / Photos
 → Shortcut
 → POST file to upload API
-→ Open PWA upload review page
+→ Server queues extraction
+→ Open PWA documents/review page when ready
 ```
 
 This gives usable iPhone sharing before native app development.
@@ -571,6 +572,13 @@ Date: Auto-detected or manual
 
 Then upload.
 
+The upload UI must support selecting or dropping multiple files at once. Each
+file is uploaded as its own request and shown with a per-file state: waiting,
+uploading, queued for extraction, duplicate, or failed. The browser only owns
+the binary upload step; once the server stores a file and creates an extraction
+job, OCR/LLM processing must continue without the user keeping the upload page
+focused.
+
 ### Processing pipeline
 
 ```text
@@ -578,6 +586,9 @@ File upload
 → virus scan / MIME validation
 → hash duplicate detection
 → encrypted storage
+→ pending extraction_jobs row
+→ upload response returns
+→ background queue drain claims pending jobs
 → OCR
 → LLM extraction
 → draft records
@@ -585,6 +596,12 @@ File upload
 → user accepts / edits / rejects
 → confirmed records written to observations / reports / medications / genetics
 ```
+
+Extraction is asynchronous and durable. `extraction_jobs` is the queue table:
+`pending` means queued, `processing` means claimed by a worker/drain, `needs_review`
+means draft rows are ready, and `failed` preserves the error for retry. The upload
+route schedules a background drain after responding; manual retry uses the same
+queue path and returns `202 Accepted` instead of blocking the request.
 
 ## 7. LLM extraction design
 
@@ -712,6 +729,9 @@ For each uploaded document:
 Original PDF/image preview on left
 Extracted values on right
 ```
+
+If extraction is still `pending` or `processing`, the review screen shows queue
+status and a refresh action instead of requiring the upload page to remain open.
 
 Each row:
 
@@ -1102,9 +1122,12 @@ Given your general infra experience, I’d avoid Supabase magic unless you want 
 
 ```text
 POST /api/documents/upload
+  - accepts one file per request
+  - returns 201 after encrypted storage and queue creation
 GET  /api/documents
 GET  /api/documents/:id
 POST /api/documents/:id/process
+  - queues/requeues extraction and returns 202
 GET  /api/extractions/:id
 POST /api/extractions/:id/accept
 POST /api/extractions/:id/reject

@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+DOCUMENT_ENCRYPTION_KEY
 
 # vercel
 .vercel

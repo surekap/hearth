@@ -33,6 +33,7 @@ Rules:
 - confidence: your certainty (0-1) that the row was read correctly.
 - Anything ambiguous goes into uncertain_items; document-level problems into warnings.
 - For non-lab documents fill the "report" object; for prescriptions fill "medications".
+- Respect the uploaded document type hint when it is not "other". If the hint is "genetic_report", keep observations empty unless the document prints true clinical lab-result rows.
 - For genetic reports:
   - Set document_type to "genetic_report".
   - Fill genetic_report with vendor/report metadata.
@@ -45,6 +46,7 @@ export async function extractWithOpenAI(input: {
   buffer: Buffer;
   mimeType: string;
   filename: string;
+  documentTypeHint: string;
 }): Promise<ProviderOutput> {
   const client = new OpenAI();
   const model = extractionModel();
@@ -73,7 +75,7 @@ export async function extractWithOpenAI(input: {
         content: [
           {
             type: "input_text",
-            text: "Extract structured data from this medical document. Return the strict JSON only.",
+            text: `Uploaded document type hint: ${input.documentTypeHint}. Extract structured data from this medical document. Return the strict JSON only.`,
           },
           filePart,
         ],

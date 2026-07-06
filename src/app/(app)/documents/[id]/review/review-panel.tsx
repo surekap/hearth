@@ -141,10 +141,11 @@ export function ReviewPanel({
     setMessage(null);
     try {
       const res = await fetch(`/api/documents/${doc.id}/process`, { method: "POST" });
-      if (!res.ok) throw new Error("Extraction failed again");
+      if (!res.ok) throw new Error("Extraction could not be queued");
+      setMessage("Extraction queued.");
       router.refresh();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Extraction failed");
+      setMessage(e instanceof Error ? e.message : "Extraction could not be queued");
     } finally {
       setReprocessing(false);
     }
@@ -275,13 +276,62 @@ export function ReviewPanel({
           {!job && doc.extractionStatus === "pending" && (
             <Card>
               <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                This document hasn&apos;t been processed yet.
+                This document is waiting for extraction.
                 <div className="mt-3">
                   <Button onClick={reprocess} disabled={reprocessing}>
                     {reprocessing && <Loader2 className="size-4 animate-spin" />}
-                    Extract values
+                    Queue extraction
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {job && (job.status === "pending" || job.status === "processing") && (
+            <Card>
+              <CardContent className="grid gap-3 py-6 text-sm text-muted-foreground">
+                <p className="flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin text-primary" />
+                  {job.status === "pending"
+                    ? "Extraction is queued."
+                    : "Extraction is running. There is nothing to finalize until draft findings appear here."}
+                </p>
+                <p>
+                  For a genetic report, useful extracted data should appear as genetic risks,
+                  traits, variants, or pharmacogenomic findings rather than lab values.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={() => router.refresh()}>
+                    Refresh status
+                  </Button>
+                  <Button size="sm" onClick={reprocess} disabled={reprocessing}>
+                    {reprocessing ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="size-4" />
+                    )}
+                    Retry extraction
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!job && doc.extractionStatus !== "pending" && acceptedCount === 0 && (
+            <Card>
+              <CardContent className="grid gap-3 py-6 text-sm text-muted-foreground">
+                <p>
+                  No extraction job was found for this document, so there are no rows to confirm
+                  yet.
+                </p>
+                <Button onClick={reprocess} disabled={reprocessing} className="justify-self-start">
+                  {reprocessing ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RotateCcw className="size-4" />
+                  )}
+                  Queue extraction
+                </Button>
               </CardContent>
             </Card>
           )}
@@ -296,7 +346,27 @@ export function ReviewPanel({
                   ) : (
                     <RotateCcw className="size-4" />
                   )}
-                  Retry extraction
+                  Queue retry
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {job?.status === "needs_review" && draftItems.length === 0 && acceptedCount === 0 && (
+            <Card>
+              <CardContent className="grid gap-3 py-6 text-sm text-muted-foreground">
+                <p>
+                  No structured rows were extracted from this document. If this is a genetic
+                  report and the model is mock, Hearth will not invent lab values or genetic
+                  findings.
+                </p>
+                <Button onClick={reprocess} disabled={reprocessing} className="justify-self-start">
+                  {reprocessing ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RotateCcw className="size-4" />
+                  )}
+                  Queue retry
                 </Button>
               </CardContent>
             </Card>

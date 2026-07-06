@@ -1,13 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { requireUser, requireProfile, handleApiError, ApiError, logAudit } from "@/lib/api";
 import { encryptBuffer, sha256Hex } from "@/lib/crypto";
+import { queueDocumentExtraction, scheduleExtractionQueueDrain } from "@/lib/extraction";
 import { putObject } from "@/lib/storage";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const MAX_BYTES = 20 * 1024 * 1024; // 20MB
 
@@ -139,7 +140,10 @@ export async function POST(req: NextRequest) {
       detail: { filename: doc.originalFilename, mime: sniffed, bytes: file.size },
     });
 
-    return NextResponse.json({ document: doc }, { status: 201 });
+    const extractionJob = await queueDocumentExtraction(doc.id);
+    after(() => scheduleExtractionQueueDrain({ limit: 3 }));
+
+    return NextResponse.json({ document: doc, extractionJob }, { status: 201 });
   } catch (e) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: e.issues }, { status: 400 });

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { FileText, Upload } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/active-profile";
@@ -21,7 +21,12 @@ const TYPE_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-function extractionBadge(status: string) {
+function extractionBadge(status: string, jobStatus?: string) {
+  if (jobStatus === "pending") return <Badge variant="secondary">queued</Badge>;
+  if (jobStatus === "processing") return <Badge className="bg-blue-600 text-white">processing</Badge>;
+  if (jobStatus === "needs_review") return <Badge className="bg-amber-500 text-white">needs review</Badge>;
+  if (jobStatus === "failed") return <Badge variant="destructive">failed</Badge>;
+
   switch (status) {
     case "confirmed":
       return <Badge className="bg-emerald-600 text-white">confirmed</Badge>;
@@ -46,6 +51,20 @@ export default async function DocumentsPage() {
     where: eq(schema.documents.profileId, profile.id),
     orderBy: [desc(schema.documents.uploadedAt)],
   });
+  const jobs =
+    docs.length > 0
+      ? await db.query.extractionJobs.findMany({
+          where: inArray(
+            schema.extractionJobs.documentId,
+            docs.map((d) => d.id)
+          ),
+          orderBy: [desc(schema.extractionJobs.createdAt)],
+        })
+      : [];
+  const latestJobByDocumentId = new Map<string, (typeof jobs)[number]>();
+  for (const job of jobs) {
+    if (!latestJobByDocumentId.has(job.documentId)) latestJobByDocumentId.set(job.documentId, job);
+  }
 
   return (
     <div className="grid gap-6">
@@ -97,7 +116,7 @@ export default async function DocumentsPage() {
                       {d.documentDate ?? d.uploadedAt.toISOString().slice(0, 10)}
                     </p>
                   </div>
-                  {extractionBadge(d.extractionStatus)}
+                  {extractionBadge(d.extractionStatus, latestJobByDocumentId.get(d.id)?.status)}
                 </CardContent>
               </Card>
             </Link>

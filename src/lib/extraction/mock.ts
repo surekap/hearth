@@ -10,8 +10,52 @@ import { PROMPT_VERSION } from "./schemas";
 export async function extractWithMock(input: {
   filename: string;
   documentDate: string | null;
+  documentType: string;
 }): Promise<ProviderOutput> {
   const reportDate = input.documentDate ?? new Date().toISOString().slice(0, 10);
+  const lowerFilename = input.filename.toLowerCase();
+  const likelyGeneticReport =
+    input.documentType === "genetic_report" ||
+    /\b(genomepatri|genome|genetic|genomics|pharmacogenomic|pgx|mapmygenome)\b/.test(
+      lowerFilename
+    );
+
+  if (likelyGeneticReport) {
+    const result: ExtractionResult = {
+      document_type: "genetic_report",
+      report_date: reportDate,
+      lab_name: null,
+      patient_name: null,
+      raw_text: `[MOCK EXTRACTION - set OPENAI_API_KEY for real extraction]\n${input.filename}\nThis looks like a genetic report. The mock provider does not invent genetic variants, risks, pharmacogenomics, or lab observations.`,
+      observations: [],
+      report: null,
+      medications: [],
+      genetic_report: {
+        vendor: lowerFilename.includes("genomepatri") ? "MapmyGenome" : null,
+        report_name: lowerFilename.includes("genomepatri") ? "Genomepatri" : null,
+        test_kind: "predisposition",
+        genome_build: null,
+        summary: "Mock provider identified this as a genetic report but did not extract findings.",
+        confidence: 0.65,
+      },
+      genetic_variants: [],
+      genetic_risks: [],
+      pharmacogenomics: [],
+      warnings: [
+        "Mock extraction provider was used. No genetic or lab findings were extracted from this document.",
+      ],
+      uncertain_items: [],
+    };
+
+    return {
+      result,
+      model: "mock",
+      promptVersion: PROMPT_VERSION,
+      inputTokens: null,
+      outputTokens: null,
+      engine: "mock",
+    };
+  }
 
   const rows: Array<
     [string, string | null, number, string, number | null, number | null]

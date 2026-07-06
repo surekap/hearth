@@ -139,6 +139,7 @@ export type DashboardSystemVisual = {
   label: string;
   value: string;
   points: number[];
+  pointLabels: string[];
   score: number | null;
 };
 
@@ -406,6 +407,16 @@ function visualPoints(card: MetricCard | undefined) {
     .filter((value) => Number.isFinite(value));
 }
 
+function visualPointLabels(card: MetricCard | undefined) {
+  if (!card) return [];
+  return card.points.slice(-16).map((point) =>
+    new Date(point.date).toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+    })
+  );
+}
+
 function bodyFatPercent(card: MetricCard | undefined) {
   if (!card?.latest) return null;
   if (card.name !== "Body Fat Percentage") return null;
@@ -423,6 +434,7 @@ function visualFromCard(card: MetricCard | undefined, label = card?.name ?? "Dat
     label,
     value: formatMetricValue(card),
     points: visualPoints(card),
+    pointLabels: visualPointLabels(card),
     score: null,
   };
 }
@@ -436,6 +448,7 @@ function bodyCompositionVisual(cardsByName: Map<string, MetricCard>): DashboardS
     label: fat != null ? "Body fat" : "BMI",
     value: fat != null ? `${fat}%` : formatMetricValue(bmiCard),
     points: visualPoints(fatCard ?? bmiCard),
+    pointLabels: visualPointLabels(fatCard ?? bmiCard),
     score: fat != null ? clampPercent(fat) : bmi != null ? clampPercent((bmi / 40) * 100) : null,
   };
 }
@@ -524,6 +537,7 @@ function reportSystemWidget(input: {
       label: "Reports",
       value: String(reportCount),
       points: [],
+      pointLabels: [],
       score: null,
     },
     relatedSectionIds: [],

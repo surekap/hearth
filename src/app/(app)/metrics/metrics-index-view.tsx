@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/ui/mascot";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { MetricIndexRow } from "@/lib/health/metric";
+import { formatMetricNumber } from "@/lib/health/series";
 
 type ObsType = { id: string; canonicalName: string; category: string; normalUnit: string | null };
 
@@ -214,7 +215,7 @@ export function MetricsIndexView({
                       {interpBadge(row.interpretation)}
                       <span className="text-sm font-semibold tabular-nums">
                         {row.latestValue != null
-                          ? row.latestValue.toLocaleString("en-IN")
+                          ? formatMetricNumber(row.latestValue, row.unit)
                           : row.latestText}
                         {row.unit && (
                           <span className="ml-1 text-xs font-normal text-muted-foreground">

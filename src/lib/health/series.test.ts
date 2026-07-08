@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   attentionState,
   downsampleEven,
+  formatMetricValue,
   rangeStart,
   rawSeries,
   rollupPeriodFor,
@@ -123,6 +124,21 @@ describe("rawSeries", () => {
   });
   it("uses singular caption for one point", () => {
     expect(rawSeries([row]).caption).toBe("1 recorded value");
+  });
+});
+
+describe("formatMetricValue", () => {
+  it("converts percent-unit fractions to percentages", () => {
+    expect(formatMetricValue(0.948, "%")).toBe("94.8 %");
+  });
+  it("keeps real percentages as-is", () => {
+    expect(formatMetricValue(39.4, "%")).toBe("39.4 %");
+  });
+  it("scales precision with magnitude", () => {
+    expect(formatMetricValue(550.862, "kcal")).toBe("551 kcal");
+    expect(formatMetricValue(20.991, "ms")).toBe("21 ms");
+    expect(formatMetricValue(5.73, null)).toBe("5.73");
+    expect(formatMetricValue(0.97)).toBe("0.97");
   });
 });
 

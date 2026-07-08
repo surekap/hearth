@@ -26,7 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { MetricChart } from "@/components/health/metric-chart";
-import { RANGES, RANGE_LABELS } from "@/lib/health/series";
+import { formatMetricNumber, RANGES, RANGE_LABELS } from "@/lib/health/series";
 import type { MetricDetail } from "@/lib/health/metric";
 import { cn } from "@/lib/utils";
 
@@ -143,7 +143,7 @@ export function MetricView({ profileId, detail }: { profileId: string; detail: M
             <CardContent className="px-4">
               <p className="text-xs text-muted-foreground">Latest</p>
               <p className="text-2xl font-semibold tabular-nums">
-                {stats.latest.toLocaleString("en-IN")}
+                {formatMetricNumber(stats.latest, stats.unit)}
                 <span className="ml-1 text-sm font-normal text-muted-foreground">{stats.unit}</span>
               </p>
               <p className="text-xs text-muted-foreground">{fmtDate(stats.latestDate)}</p>
@@ -152,13 +152,17 @@ export function MetricView({ profileId, detail }: { profileId: string; detail: M
           <Card className="py-3">
             <CardContent className="px-4">
               <p className="text-xs text-muted-foreground">Lowest in range</p>
-              <p className="text-2xl font-semibold tabular-nums">{stats.min.toLocaleString("en-IN")}</p>
+              <p className="text-2xl font-semibold tabular-nums">
+                {formatMetricNumber(stats.min, stats.unit)}
+              </p>
             </CardContent>
           </Card>
           <Card className="py-3">
             <CardContent className="px-4">
               <p className="text-xs text-muted-foreground">Highest in range</p>
-              <p className="text-2xl font-semibold tabular-nums">{stats.max.toLocaleString("en-IN")}</p>
+              <p className="text-2xl font-semibold tabular-nums">
+                {formatMetricNumber(stats.max, stats.unit)}
+              </p>
             </CardContent>
           </Card>
           <Card className="py-3">
@@ -187,7 +191,7 @@ export function MetricView({ profileId, detail }: { profileId: string; detail: M
           ) : singlePoint ? (
             <div className="grid gap-1 rounded-lg border bg-muted/30 p-6 text-center">
               <p className="text-4xl font-semibold tabular-nums">
-                {series.points[0].value.toLocaleString("en-IN")}
+                {formatMetricNumber(series.points[0].value, detail.type.unit)}
                 <span className="ml-1 text-base font-normal text-muted-foreground">
                   {detail.type.unit}
                 </span>

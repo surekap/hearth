@@ -151,6 +151,23 @@ export function rawSeries(
   return { mode: "raw", period: null, caption, points };
 }
 
+/**
+ * Human formatting for a metric value: percent-unit fractions become
+ * percentages (0.948 % → 94.8%), precision scales with magnitude.
+ */
+export function formatMetricNumber(value: number, unit?: string | null): string {
+  let v = value;
+  if ((unit ?? "").trim() === "%" && v > 0 && v < 1) v = v * 100;
+  const abs = Math.abs(v);
+  const digits = abs >= 100 ? 0 : abs >= 10 ? 1 : abs >= 1 ? 2 : 3;
+  return Number(v.toFixed(digits)).toLocaleString("en-IN");
+}
+
+export function formatMetricValue(value: number, unit?: string | null): string {
+  const u = unit ?? "";
+  return `${formatMetricNumber(value, u)}${u ? ` ${u}` : ""}`;
+}
+
 /** Even-step downsample that always keeps the final element. */
 export function downsampleEven<T>(items: T[], max: number): T[] {
   if (items.length <= max) return items;

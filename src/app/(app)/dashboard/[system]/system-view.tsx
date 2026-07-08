@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricChart } from "@/components/health/metric-chart";
 import { Sparkline } from "@/components/health/sparkline";
-import { RANGES, RANGE_LABELS } from "@/lib/health/series";
+import { formatMetricNumber, RANGES, RANGE_LABELS } from "@/lib/health/series";
 import type { SystemPageData } from "@/lib/health/system";
 import { cn } from "@/lib/utils";
 
@@ -210,7 +210,9 @@ export function SystemView({ data }: { data: SystemPageData }) {
                   <Sparkline values={row.spark} className="hidden h-5 w-16 text-primary sm:block" />
                   {interpBadge(row.interpretation)}
                   <span className="text-sm font-semibold tabular-nums">
-                    {row.latestValue != null ? row.latestValue.toLocaleString("en-IN") : row.latestText}
+                    {row.latestValue != null
+                      ? formatMetricNumber(row.latestValue, row.unit)
+                      : row.latestText}
                     {row.unit && (
                       <span className="ml-1 text-xs font-normal text-muted-foreground">{row.unit}</span>
                     )}

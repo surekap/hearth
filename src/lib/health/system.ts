@@ -2,7 +2,13 @@ import { desc, ilike, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { getMarkers, type Marker } from "./markers";
 import { getMetricIndex, loadMetricSeries, type MetricIndexRow } from "./metric";
-import { attentionState, rangeStart, type MetricSeries, type RangeKey } from "./series";
+import {
+  attentionState,
+  formatMetricValue,
+  rangeStart,
+  type MetricSeries,
+  type RangeKey,
+} from "./series";
 import { metricBelongsTo, systemFor, type SystemDef } from "./systems";
 
 export type SystemMetricRow = MetricIndexRow & { spark: number[] };
@@ -100,7 +106,7 @@ export async function getSystemData(
     ? {
         name: heroRow.name,
         typeId: heroRow.typeId,
-        value: `${heroRow.latestValue!.toLocaleString("en-IN")}${heroRow.unit ? ` ${heroRow.unit}` : ""}`,
+        value: formatMetricValue(heroRow.latestValue!, heroRow.unit),
       }
     : null;
 

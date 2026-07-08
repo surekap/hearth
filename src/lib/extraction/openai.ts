@@ -33,6 +33,8 @@ Rules:
 - confidence: your certainty (0-1) that the row was read correctly.
 - Anything ambiguous goes into uncertain_items; document-level problems into warnings.
 - For non-lab documents fill the "report" object; for prescriptions fill "medications".
+- For imaging reports, preserve printed image/page comments in report.findings, including notes such as "Image not for diagnosis".
+- For DEXA/body-composition reports, capture BMD, T-score, Z-score, BMI, VAT/SAT and regional body-composition values in report.findings/report.summary. The original PDF remains the image attachment, so include enough page-level comments to find the relevant scan images later.
 - Respect the uploaded document type hint when it is not "other". If the hint is "genetic_report", keep observations empty unless the document prints true clinical lab-result rows.
 - For genetic reports:
   - Set document_type to "genetic_report".

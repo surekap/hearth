@@ -395,6 +395,16 @@ function makeMetric(cardsByName: Map<string, MetricCard>, name: string, label = 
   };
 }
 
+function makeFirstMetric(cardsByName: Map<string, MetricCard>, names: string[], label = names[0]): DashboardSystemMetric {
+  const card = firstCard(cardsByName, names);
+  return {
+    label,
+    value: formatMetricValue(card),
+    detail: card?.latest ? plainTrend(card) : "not measured yet",
+    status: metricStatus(card),
+  };
+}
+
 function firstCard(cardsByName: Map<string, MetricCard>, names: string[]) {
   return names.map((name) => cardsByName.get(name)).find((card) => card?.latest);
 }
@@ -419,7 +429,7 @@ function visualPointLabels(card: MetricCard | undefined) {
 
 function bodyFatPercent(card: MetricCard | undefined) {
   if (!card?.latest) return null;
-  if (card.name !== "Body Fat Percentage") return null;
+  if (!["Body Fat Percentage", "Total body fat percentage"].includes(card.name)) return null;
   const value = card.latest.value;
   if (card.unit === "%" && value > 0 && value < 1) return Number((value * 100).toFixed(1));
   return value;
@@ -440,7 +450,7 @@ function visualFromCard(card: MetricCard | undefined, label = card?.name ?? "Dat
 }
 
 function bodyCompositionVisual(cardsByName: Map<string, MetricCard>): DashboardSystemVisual {
-  const fatCard = cardsByName.get("Body Fat Percentage");
+  const fatCard = firstCard(cardsByName, ["Body Fat Percentage", "Total body fat percentage"]);
   const bmiCard = cardsByName.get("BMI");
   const fat = bodyFatPercent(fatCard);
   const bmi = bmiCard?.latest?.value ?? null;
@@ -567,12 +577,31 @@ function buildSystemWidgets(input: {
   const kidneyCards = cardsIn(["renal", "urine"]);
   const metabolicCards = cardsIn(["liver", "glucose", "body", "inflammation"]);
   const sleepCards = cardsIn(["sleep"]);
+  const boneDensityCards = [
+    ...[
+      "DEXA total body BMD",
+      "DEXA total body T-score",
+      "DEXA total body Z-score",
+      "Total body bone mineral content",
+    ]
+      .map((name) => cardsByName.get(name))
+      .filter(Boolean),
+  ] as MetricCard[];
   const bodyCompositionCards = [
     ...[
       "BMI",
       "Basal Energy Burned",
       "Body Fat Percentage",
+      "Total body fat percentage",
       "Lean Body Mass",
+      "Total body lean mass",
+      "Total body fat mass",
+      "Total body tissue mass",
+      "Total body mass by DEXA",
+      "Visceral adipose tissue area",
+      "Visceral adipose tissue mass",
+      "VAT percentage",
+      "SAT percentage",
       "Weight",
       "Waist Circumference",
     ]
@@ -735,11 +764,43 @@ function buildSystemWidgets(input: {
     });
   }
 
+  if (boneDensityCards.length > 0) {
+    widgets.push({
+      id: "bone-density",
+      title: "Bone density",
+      eyebrow: "DEXA",
+      summary: summarizeSystem({
+        availableCards: boneDensityCards,
+        abnormalCards: abnormalIn(boneDensityCards),
+        watchCards: watchIn(boneDensityCards),
+        normalLabel: "The latest DEXA bone-density values are not currently flagged.",
+        attentionLabel: "Bone-density markers to review",
+        watchLabel: "Bone-density markers changing",
+        missingLabel: "Upload a DEXA report to build this view.",
+      }),
+      detail:
+        "BMD, T-score and Z-score are shown together so the scan's printed bone-density impression can be reviewed beside the source report.",
+      tone: widgetTone(boneDensityCards),
+      metrics: [
+        makeMetric(cardsByName, "DEXA total body BMD", "BMD"),
+        makeMetric(cardsByName, "DEXA total body T-score", "T-score"),
+        makeMetric(cardsByName, "DEXA total body Z-score", "Z-score"),
+        makeMetric(cardsByName, "Total body bone mineral content", "BMC"),
+      ],
+      visual: visualFromCard(
+        firstCard(cardsByName, ["DEXA total body T-score", "DEXA total body BMD"]),
+        "DEXA trend"
+      ),
+      relatedSectionIds: maybeSections("metabolic", "attention"),
+      reportCount: 0,
+    });
+  }
+
   if (bodyCompositionCards.length > 0) {
     widgets.push({
       id: "body-composition",
       title: "Body composition",
-      eyebrow: "BMI, BMR & muscle/fat",
+      eyebrow: "BMI, fat, lean & VAT",
       summary: summarizeSystem({
         availableCards: bodyCompositionCards,
         abnormalCards: abnormalIn(bodyCompositionCards),
@@ -750,13 +811,13 @@ function buildSystemWidgets(input: {
         missingLabel: "Add BMI, BMR, fat or lean mass to build this view.",
       }),
       detail:
-        "BMI, resting energy burn, fat percentage and lean mass are shown together so weight changes are easier to understand.",
+        "BMI, fat percentage, lean mass and visceral fat are shown together so DEXA and wearable body measures read as one picture.",
       tone: widgetTone(bodyCompositionCards),
       metrics: [
         makeMetric(cardsByName, "BMI"),
-        makeMetric(cardsByName, "Basal Energy Burned", "BMR"),
-        makeMetric(cardsByName, "Body Fat Percentage", "Body fat"),
-        makeMetric(cardsByName, "Lean Body Mass", "Lean mass"),
+        makeFirstMetric(cardsByName, ["Body Fat Percentage", "Total body fat percentage"], "Body fat"),
+        makeFirstMetric(cardsByName, ["Lean Body Mass", "Total body lean mass"], "Lean mass"),
+        makeMetric(cardsByName, "Visceral adipose tissue area", "VAT area"),
       ],
       visual: bodyCompositionVisual(cardsByName),
       relatedSectionIds: maybeSections("metabolic", "attention"),

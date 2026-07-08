@@ -63,6 +63,7 @@ the upload flow.
 | `OPENAI_MODEL` | Optional, defaults to `gpt-4o` |
 | `BLOB_READ_WRITE_TOKEN` | Enables Vercel Blob storage (otherwise local `./storage`) |
 | `EXTRACTION_PROVIDER` | Set to `mock` to force the mock provider even with a key |
+| `CRON_SECRET` | Bearer secret used by Vercel Cron to drain queued/stale extraction jobs |
 | `SEED_USER_EMAIL/PASSWORD/NAME` | Seed account, used by `npm run db:seed` |
 
 ## Deploying to Vercel
@@ -70,7 +71,7 @@ the upload flow.
 1. Create a Vercel project and link this repo (`vercel link`).
 2. Provision **Neon Postgres** and **Vercel Blob** from the Vercel Marketplace/Storage tab —
    this injects `DATABASE_URL` and `BLOB_READ_WRITE_TOKEN`.
-3. Add `AUTH_SECRET`, `DOCUMENT_ENCRYPTION_KEY`, `OPENAI_API_KEY` as env vars.
+3. Add `AUTH_SECRET`, `DOCUMENT_ENCRYPTION_KEY`, `OPENAI_API_KEY`, and `CRON_SECRET` as env vars.
 4. Run the schema push + seed once against the Neon URL:
    `DATABASE_URL=postgres://…neon… npm run db:push && DATABASE_URL=… npm run db:seed`
 5. `vercel deploy --prod`.

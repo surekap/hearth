@@ -319,7 +319,9 @@ export async function drainExtractionQueue(options: { limit?: number } = {}) {
 }
 
 export function scheduleExtractionQueueDrain(options: { limit?: number } = {}) {
-  drainExtractionQueue(options).catch((e) => console.error("extraction queue drain failed", e));
+  return drainExtractionQueue(options)
+    .then(() => undefined)
+    .catch((e) => console.error("extraction queue drain failed", e));
 }
 
 export async function failStaleExtractionJobs(options: { minutes?: number } = {}) {

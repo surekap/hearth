@@ -130,6 +130,9 @@ function SystemIcon({ id }: { id: string }) {
   if (id === "blood-counts") return <Droplets className="size-5 text-destructive" />;
   if (id === "kidney") return <Droplets className="size-5 text-destructive" />;
   if (id === "sleep") return <Bed className="size-5 text-primary" />;
+  if (id === "bone-density") {
+    return <Dumbbell className="size-5 text-primary" />;
+  }
   if (id === "body-composition") {
     return <Dumbbell className="size-5 text-[color-mix(in_oklch,var(--success),black_22%)]" />;
   }

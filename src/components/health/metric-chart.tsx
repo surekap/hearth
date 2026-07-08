@@ -44,7 +44,17 @@ const PERIOD_MS: Record<string, number> = {
  * a fake straight segment across months with no data.
  */
 function withGaps(points: ChartPoint[], period: string | null): ChartPoint[] {
-  const maxGap = period ? PERIOD_MS[period] * GAP_FACTOR : null;
+  let maxGap = period ? PERIOD_MS[period] * GAP_FACTOR : null;
+  if (!maxGap && points.length >= 8) {
+    // Raw series: break across holes much larger than the typical sampling
+    // interval (frequent wearable data), but keep sparse lab series connected.
+    const intervals = points
+      .slice(1)
+      .map((p, i) => p.t - points[i].t)
+      .sort((a, b) => a - b);
+    const median = intervals[Math.floor(intervals.length / 2)];
+    if (median > 0 && median <= PERIOD_MS.week) maxGap = median * 6;
+  }
   if (!maxGap) return points;
   const out: ChartPoint[] = [];
   for (let i = 0; i < points.length; i++) {

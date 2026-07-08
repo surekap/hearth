@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, Pencil, RotateCcw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -377,15 +378,15 @@ export function ReviewPanel({
               <CardContent className="py-6 text-sm text-muted-foreground">
                 ✅ {acceptedCount} item{acceptedCount === 1 ? "" : "s"} confirmed from this
                 document. View them in{" "}
-                <a className="underline" href={acceptedGeneticsOnly ? "/genetics" : "/metrics"}>
-                  {acceptedGeneticsOnly ? "Genetics" : "Labs"}
-                </a>{" "}
+                <Link className="underline" href={acceptedGeneticsOnly ? "/genetics" : "/metrics"}>
+                  {acceptedGeneticsOnly ? "Genetics" : "Measurements"}
+                </Link>{" "}
                 {!acceptedGeneticsOnly && (
                   <>
                     and the{" "}
-                    <a className="underline" href="/dashboard">
+                    <Link className="underline" href="/dashboard">
                       Dashboard
-                    </a>
+                    </Link>
                   </>
                 )}
                 .

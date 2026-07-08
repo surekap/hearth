@@ -43,3 +43,7 @@ next-env.d.ts
 
 # encrypted local document storage (dev)
 /storage
+
+# Local working assets (duplicated in public/images) and design inspiration
+/images/
+/ui-ideas/

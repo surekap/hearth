@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 const items = [
   { href: "/", label: "Timeline", icon: Clock },
   { href: "/dashboard", label: "Dashboard", icon: Activity },
-  { href: "/labs", label: "Labs", icon: FlaskConical },
+  { href: "/metrics", label: "Measurements", icon: FlaskConical },
   { href: "/genetics", label: "Genetics", icon: Dna },
   { href: "/meds", label: "Meds", icon: Pill },
   { href: "/documents", label: "Documents", icon: FileText },

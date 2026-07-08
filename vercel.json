@@ -1,1 +1,8 @@
-{}
+{
+  "crons": [
+    {
+      "path": "/api/extractions/drain",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

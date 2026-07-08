@@ -200,7 +200,7 @@ export function ReviewPanel({
               i.itemType
             )
           );
-        router.push(`${geneticsOnly ? "/genetics" : "/labs"}?confirmed=${data.accepted}`);
+        router.push(`${geneticsOnly ? "/genetics" : "/metrics"}?confirmed=${data.accepted}`);
       }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Save failed");
@@ -377,7 +377,7 @@ export function ReviewPanel({
               <CardContent className="py-6 text-sm text-muted-foreground">
                 ✅ {acceptedCount} item{acceptedCount === 1 ? "" : "s"} confirmed from this
                 document. View them in{" "}
-                <a className="underline" href={acceptedGeneticsOnly ? "/genetics" : "/labs"}>
+                <a className="underline" href={acceptedGeneticsOnly ? "/genetics" : "/metrics"}>
                   {acceptedGeneticsOnly ? "Genetics" : "Labs"}
                 </a>{" "}
                 {!acceptedGeneticsOnly && (

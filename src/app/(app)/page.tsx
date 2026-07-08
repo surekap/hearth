@@ -53,6 +53,7 @@ export default async function TimelinePage() {
         valueText: schema.observations.valueText,
         unit: schema.observations.unit,
         typeName: schema.observationTypes.canonicalName,
+        typeId: schema.observationTypes.id,
       })
       .from(schema.observations)
       .innerJoin(
@@ -119,7 +120,7 @@ export default async function TimelinePage() {
         kind: "manual",
         title: `${o.typeName} recorded`,
         detail: `${o.valueNumeric ?? o.valueText ?? ""} ${o.unit ?? ""}`.trim(),
-        href: `/labs`,
+        href: `/metrics/${o.typeId}`,
         badge:
           o.interpretation === "high" || o.interpretation === "critical"
             ? { label: o.interpretation, tone: "red" }

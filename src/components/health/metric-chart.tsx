@@ -26,10 +26,35 @@ function fmtDate(t: number) {
 
 type ChartPoint = {
   t: number;
-  value: number;
+  value: number | null;
   band?: [number, number];
-  interpretation: string;
+  interpretation?: string;
 };
+
+const GAP_FACTOR = 2.5;
+const PERIOD_MS: Record<string, number> = {
+  day: 24 * 60 * 60 * 1000,
+  week: 7 * 24 * 60 * 60 * 1000,
+  month: 31 * 24 * 60 * 60 * 1000,
+};
+
+/**
+ * Insert null rows into rollup series where consecutive buckets are further
+ * apart than the rollup period allows, so the line breaks instead of drawing
+ * a fake straight segment across months with no data.
+ */
+function withGaps(points: ChartPoint[], period: string | null): ChartPoint[] {
+  const maxGap = period ? PERIOD_MS[period] * GAP_FACTOR : null;
+  if (!maxGap) return points;
+  const out: ChartPoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    if (i > 0 && points[i].t - points[i - 1].t > maxGap) {
+      out.push({ t: points[i - 1].t + (points[i].t - points[i - 1].t) / 2, value: null });
+    }
+    out.push(points[i]);
+  }
+  return out;
+}
 
 export function MetricChart({
   series,
@@ -42,12 +67,15 @@ export function MetricChart({
   markers?: Marker[];
   height?: number;
 }) {
-  const data: ChartPoint[] = series.points.map((p) => ({
-    t: new Date(p.date).getTime(),
-    value: p.value,
-    band: p.min != null && p.max != null ? [p.min, p.max] : undefined,
-    interpretation: p.interpretation,
-  }));
+  const data: ChartPoint[] = withGaps(
+    series.points.map((p) => ({
+      t: new Date(p.date).getTime(),
+      value: p.value,
+      band: p.min != null && p.max != null ? ([p.min, p.max] as [number, number]) : undefined,
+      interpretation: p.interpretation,
+    })),
+    series.period
+  );
   const first = data[0]?.t ?? 0;
   const last = data[data.length - 1]?.t ?? 1;
   const refPoint = series.points.find((p) => p.referenceLow != null || p.referenceHigh != null);

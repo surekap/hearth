@@ -73,10 +73,14 @@ The workhorse page (new):
   event/medication markers on the x-axis.
 - **Density rule:** if raw confirmed points in range > 120, read from
   `health_rollups` and render min–avg–max band; period auto-picked by range
-  (3m→day, 6m/1y→week, 3y/all→month; fall back to next-coarser if the chosen
-  period has no rows). Otherwise render every raw point as dot+line. A caption
-  states exactly what is shown, e.g. "Weekly average of 1,102 readings" or
-  "All 7 recorded values".
+  (3m→day, 6m/1y→week, 3y/all→month). Note: the rollups table currently
+  contains only `day` rows (aggregations: `daily_avg`+`min`+`max`, or
+  `daily_sum`), so week/month buckets are computed at query time with
+  `date_trunc` over day rollups (count-weighted average for avg metrics, sum
+  for sum metrics, min-of-min/max-of-max for the band). If a metric has no
+  rollups at all, fall back to evenly downsampled raw points. Otherwise render
+  every raw point as dot+line. A caption states exactly what is shown, e.g.
+  "Weekly averages from 1,102 readings" or "All 7 recorded values".
 - Single-point metrics: value card with reference range — no trend line ever.
 - Stats row: latest, min/max in range, change vs. range start (only when ≥2 points).
 - Full history table (all confirmed rows in range, newest first): value, unit,

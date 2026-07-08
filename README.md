@@ -99,12 +99,14 @@ Keep `DOCUMENT_ENCRYPTION_KEY` safe — encrypted documents are unreadable witho
 src/db/            schema (users, profiles, documents, extraction_jobs,
                    extracted_items, observations, observation_types,
                    clinical_reports, ai_context_logs, audit_logs), seed
-src/lib/           auth, crypto (AES-GCM), storage (Blob/disk), dashboard
+src/lib/           auth, crypto (AES-GCM), storage (Blob/disk)
+src/lib/health/    series logic, system registry, overview/system/metric loaders
 src/lib/extraction openai + mock providers, canonical test mapping
 src/lib/ai/        context builder, PII redaction, answer providers
 src/app/api/       upload, process, review accept/reject, observations,
-                   dashboard, ai/ask, profiles
-src/app/(app)/     timeline, dashboard, labs, documents, review, upload,
+                   ai/ask, profiles
+src/app/(app)/     timeline, dashboard (overview + per-system), metrics
+                   (index + per-metric detail), documents, review, upload,
                    ask, profiles
 ```
 

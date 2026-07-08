@@ -7,6 +7,9 @@ import { getActiveProfile } from "@/lib/active-profile";
 import { ProfileSwitcher } from "@/components/shell/profile-switcher";
 import { MainNav } from "@/components/shell/nav";
 import { OfflineStatus } from "@/components/shell/offline-status";
+import { CommandMenu, type CommandItem } from "@/components/shell/command-menu";
+import { getMetricIndex } from "@/lib/health/metric";
+import { SYSTEMS } from "@/lib/health/systems";
 import { Button } from "@/components/ui/button";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -14,6 +17,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session?.user?.id) redirect("/login");
 
   const { profile, profiles } = await getActiveProfile(session.user.id);
+
+  const index = profile ? await getMetricIndex(profile.id) : [];
+  const commandItems: CommandItem[] = [
+    ...SYSTEMS.map((s) => ({ label: s.title, hint: "System", href: `/dashboard/${s.id}` })),
+    ...index.map((m) => ({ label: m.name, hint: m.categoryLabel, href: `/metrics/${m.typeId}` })),
+  ];
 
   return (
     <div className="min-h-svh min-w-0 max-w-full overflow-x-clip">
@@ -61,6 +70,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </header>
       <main className="mx-auto min-w-0 w-full max-w-6xl px-4 py-5 pb-8 sm:py-6">{children}</main>
+      <CommandMenu items={commandItems} />
       <OfflineStatus />
     </div>
   );

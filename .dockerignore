@@ -1,0 +1,13 @@
+.git
+.next
+.pnpm-store
+node_modules
+storage
+coverage
+build
+.env*
+DOCUMENT_ENCRYPTION_KEY
+.DS_Store
+ui-ideas
+images
+docs

@@ -11,7 +11,7 @@ AI Q&A, medication logging, and JSON / FHIR / doctor-friendly PDF export.
 ## Stack
 
 - **Next.js 16** (App Router, Turbopack) · TypeScript · Tailwind 4 · shadcn/ui · Recharts
-- **Postgres** via Drizzle ORM (`pg` Pool — works with local Postgres and Neon)
+- **Postgres** via Drizzle ORM (`pg` Pool — works with local, self-hosted, or managed Postgres)
 - **Auth.js v5** credentials (email/password, JWT sessions), route protection via `src/proxy.ts`
 - **Documents**: AES-256-GCM encrypted before storage; Vercel Blob when
   `BLOB_READ_WRITE_TOKEN` is set, local `./storage` dir otherwise
@@ -65,6 +65,46 @@ the upload flow.
 | `EXTRACTION_PROVIDER` | Set to `mock` to force the mock provider even with a key |
 | `CRON_SECRET` | Bearer secret used by Vercel Cron to drain queued/stale extraction jobs |
 | `SEED_USER_EMAIL/PASSWORD/NAME` | Seed account, used by `npm run db:seed` |
+
+## Docker Compose (Hetzner / self-hosted)
+
+The repo now ships with a `docker-compose.yml` that starts:
+
+- the Hearth app
+- a local Postgres 17 container
+- a persistent Docker volume for Postgres data
+- a bind mount at `/mnt/storagebox/hearth/storage` for encrypted uploaded documents
+
+Bring it up with:
+
+```bash
+docker compose up -d --build
+```
+
+On first boot the app container will:
+
+1. wait for Postgres
+2. run `npm run db:push`
+3. run `npm run db:seed`
+4. start the production Next.js server
+
+Default local URL: `http://localhost:3000`
+
+Default seeded login:
+
+- Email: `admin@hearth.local`
+- Password: `hearth-dev`
+
+Important overrides for a real server:
+
+- Set `NEXT_PUBLIC_APP_URL` to your public HTTPS URL
+- Set strong values for `AUTH_SECRET`, `DOCUMENT_ENCRYPTION_KEY`, and `CRON_SECRET`
+- Optionally set `OPENAI_API_KEY` if you want real extraction/Q&A instead of the mock provider
+
+By default Docker Compose uses local disk storage at `/app/storage`, so no Blob/Neon
+dependency is required. In the provided compose file, `/app/storage` is backed by
+`${HEARTH_STORAGE_DIR:-/mnt/storagebox/hearth/storage}` so uploads live on your
+Hetzner Storage Box mount by default.
 
 ## Deploying to Vercel
 

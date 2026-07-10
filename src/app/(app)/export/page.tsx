@@ -1,6 +1,16 @@
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { Download, FileJson, FileText, Smartphone, RefreshCw } from "lucide-react";
+import {
+  Cable,
+  Download,
+  FileJson,
+  FileText,
+  FolderOpen,
+  RefreshCw,
+  ShieldCheck,
+  Smartphone,
+  Terminal,
+} from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/active-profile";
 import { db, schema } from "@/db";
@@ -24,6 +34,27 @@ export default async function ExportPage() {
   const user = await db.query.users.findFirst({
     where: eq(schema.users.id, session.user.id),
   });
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const apiToken = user?.apiToken ?? "<generate a token below>";
+  const ingestRoot = "/path/to/prescriptions";
+  const projectRoot = process.env.VERCEL ? "/path/to/hearth" : process.cwd();
+  const mcpEnv = `HEARTH_API_TOKEN=${apiToken}
+HEARTH_INGEST_ROOTS=${ingestRoot}
+HEARTH_APP_URL=${appUrl}`;
+  const mcpConfig = `{
+  "mcpServers": {
+    "hearth": {
+      "command": "npm",
+      "args": ["--silent", "run", "mcp:hearth"],
+      "cwd": "${projectRoot}",
+      "env": {
+        "HEARTH_API_TOKEN": "${apiToken}",
+        "HEARTH_INGEST_ROOTS": "${ingestRoot}",
+        "HEARTH_APP_URL": "${appUrl}"
+      }
+    }
+  }
+}`;
 
   const formats = [
     {
@@ -100,8 +131,8 @@ export default async function ExportPage() {
         </CardHeader>
         <CardContent className="grid gap-3">
           <div className="grid gap-1 rounded-lg border bg-muted/50 p-3 font-mono text-xs">
-            <p>POST {process.env.NEXT_PUBLIC_APP_URL ?? "https://<your-app>"}/api/documents/upload</p>
-            <p>Header: Authorization: Bearer {user?.apiToken ?? "<generate a token below>"}</p>
+            <p>POST {appUrl}/api/documents/upload</p>
+            <p>Header: Authorization: Bearer {apiToken}</p>
             <p>Form fields: file = (shared file) · profileId = {profile.id}</p>
             <p>Optional: documentType, source (apollo/whatsapp/camera/files), documentDate</p>
           </div>
@@ -115,6 +146,73 @@ export default async function ExportPage() {
               {user?.apiToken ? "Rotate token" : "Generate token"}
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Cable className="size-5 text-primary" />
+            MCP ingest setup
+          </CardTitle>
+          <CardDescription>
+            Connect Claude, ChatGPT or another MCP client to process a local folder of
+            scanned prescriptions, then submit drafts into Hearth for review.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="flex gap-3 rounded-lg border bg-background/60 p-3">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Use this profile</p>
+                <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                  {profile.id}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 rounded-lg border bg-background/60 p-3">
+              <FolderOpen className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Allow one folder</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Set <code>HEARTH_INGEST_ROOTS</code> to the prescription folder path.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 rounded-lg border bg-background/60 p-3">
+              <Terminal className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Run locally</p>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  npm run mcp:hearth
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-2">
+              <p className="text-sm font-medium">Environment</p>
+              <pre className="max-h-64 overflow-auto rounded-lg border bg-muted/50 p-3 text-xs leading-5">
+                <code>{mcpEnv}</code>
+              </pre>
+            </div>
+            <div className="grid gap-2">
+              <p className="text-sm font-medium">MCP client config</p>
+              <pre className="max-h-64 overflow-auto rounded-lg border bg-muted/50 p-3 text-xs leading-5">
+                <code>{mcpConfig}</code>
+              </pre>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-muted/40 p-3 text-xs leading-5 text-muted-foreground">
+            Ask the client to use Hearth MCP, scan the folder, upload each file as
+            <code>documentType=prescription</code>, extract with{" "}
+            <code>hearth_get_extraction_schema</code>, submit with{" "}
+            <code>hearth_submit_extraction_result</code>, and return the review URLs. Do
+            not ask it to accept extracted items.
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -174,6 +174,14 @@ shared file to `/api/documents/upload` with `Authorization: Bearer <token>` and 
 `profileId` form field. Session-less uploads are validated, encrypted, deduped and
 profile-isolated exactly like PWA uploads.
 
+## MCP prescription ingest
+
+For local folders of old prescription PDFs/scans, run the stdio MCP server with
+`npm run mcp:hearth`. It lets an MCP client scan allowed folders, upload encrypted
+documents, read file payloads for OCR/vision extraction, and submit structured draft
+items back into the normal Hearth review workflow. See
+`docs/mcp-prescription-ingest.md`.
+
 ## Roadmap (from SPEC.md)
 
 - **Phase 2**: native iOS shell with Share Extension + HealthKit sync

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import Image from "next/image";
 import { AuthError } from "next-auth";
 import { signIn } from "@/lib/auth";
@@ -82,7 +83,10 @@ export default async function LoginPage({
         </div>
 
         <p className="mt-6 text-center text-xs text-white/62">
-          Encrypted documents · per-profile isolation · you hold the keys
+          Need an account?{" "}
+          <Link href="/signup" className="font-medium text-white underline-offset-4 hover:underline">
+            Create one
+          </Link>
         </p>
       </div>
     </main>

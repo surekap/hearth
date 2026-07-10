@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { desc, eq, asc } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/db";
+import { getProfileAccess } from "@/lib/profile-access";
 import { ReviewPanel } from "./review-panel";
 
 export default async function ReviewPage({
@@ -16,11 +17,10 @@ export default async function ReviewPage({
   const doc = await db.query.documents.findFirst({ where: eq(schema.documents.id, id) });
   if (!doc) notFound();
 
-  // Profile isolation: the document must belong to one of this user's profiles.
-  const profile = await db.query.profiles.findFirst({
-    where: eq(schema.profiles.id, doc.profileId),
-  });
-  if (!profile || profile.userId !== session.user.id) notFound();
+  // Profile isolation: the document must belong to a profile this user can access.
+  const access = await getProfileAccess(session.user.id, doc.profileId);
+  if (!access) notFound();
+  const { profile } = access;
 
   const job = await db.query.extractionJobs.findFirst({
     where: eq(schema.extractionJobs.documentId, doc.id),

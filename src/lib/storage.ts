@@ -31,6 +31,13 @@ function assertLocalDiskAllowed() {
   }
 }
 
+function localObjectPath(key: string) {
+  const root = path.resolve(LOCAL_DIR);
+  const filePath = path.resolve(root, key);
+  if (filePath !== root && filePath.startsWith(`${root}${path.sep}`)) return filePath;
+  throw new Error("Invalid storage key");
+}
+
 export async function putObject(key: string, data: Buffer): Promise<string> {
   if (shouldUseBlob()) {
     const { put } = await import("@vercel/blob");
@@ -43,7 +50,7 @@ export async function putObject(key: string, data: Buffer): Promise<string> {
     return blob.url;
   }
   assertLocalDiskAllowed();
-  const filePath = path.join(LOCAL_DIR, key);
+  const filePath = localObjectPath(key);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, data);
   return key;
@@ -60,7 +67,7 @@ export async function getObject(storedKey: string): Promise<Buffer> {
     return Buffer.from(await new Response(blob.stream).arrayBuffer());
   }
   assertLocalDiskAllowed();
-  return readFile(path.join(LOCAL_DIR, storedKey));
+  return readFile(localObjectPath(storedKey));
 }
 
 export async function deleteObject(storedKey: string): Promise<void> {
@@ -69,5 +76,5 @@ export async function deleteObject(storedKey: string): Promise<void> {
     await del(storedKey);
     return;
   }
-  await unlink(path.join(LOCAL_DIR, storedKey)).catch(() => {});
+  await unlink(localObjectPath(storedKey)).catch(() => {});
 }

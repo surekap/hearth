@@ -10,7 +10,8 @@ export const authConfig = {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
       const isLoginPage = nextUrl.pathname.startsWith("/login");
-      if (isLoginPage) {
+      const isSignupPage = nextUrl.pathname.startsWith("/signup");
+      if (isLoginPage || isSignupPage) {
         if (isLoggedIn) return Response.redirect(new URL("/", nextUrl));
         return true;
       }

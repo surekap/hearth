@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      network: host
     depends_on:
       postgres:
         condition: service_healthy
@@ -12,6 +13,8 @@ services:
       HOSTNAME: "0.0.0.0"
       PORT: "3000"
       AUTH_TRUST_HOST: "${AUTH_TRUST_HOST:-true}"
+      AUTH_URL: "${AUTH_URL:-http://localhost:3000}"
+      NEXTAUTH_URL: "${NEXTAUTH_URL:-http://localhost:3000}"
       DATABASE_URL: "postgresql://${POSTGRES_USER:-hearth}:${POSTGRES_PASSWORD:-hearth}@postgres:5432/${POSTGRES_DB:-hearth}"
       AUTH_SECRET: "${AUTH_SECRET:-change-me-before-exposing-publicly}"
       DOCUMENT_ENCRYPTION_KEY: "${DOCUMENT_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"

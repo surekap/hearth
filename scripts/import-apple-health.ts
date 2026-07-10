@@ -5,6 +5,10 @@ import path from "path";
 import readline from "readline";
 import { config } from "dotenv";
 import { Pool } from "pg";
+import {
+  isImplausibleMetricObservation,
+  normalizeMetricRecord,
+} from "../src/lib/health/normalization";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -594,8 +598,24 @@ async function main() {
 
         if (metric && Number.isFinite(value) && day && observedAt) {
           const typeId = typeIds.get(metric.canonicalName)!;
-          const unit = metric.unit ?? attrs.unit ?? null;
-          addRollup(rollups, typeId, day, metric.aggregation, value, unit);
+          const normalized = normalizeMetricRecord({
+            metric: metric.canonicalName,
+            normalUnit: metric.unit ?? null,
+            unit: metric.unit ?? attrs.unit ?? null,
+            valueNumeric: value,
+          });
+          if (isImplausibleMetricObservation(metric.canonicalName, normalized.valueNumeric)) {
+            continue;
+          }
+          const unit = normalized.unit;
+          addRollup(
+            rollups,
+            typeId,
+            day,
+            metric.aggregation,
+            normalized.valueNumeric ?? value,
+            unit
+          );
 
           if (metric.raw) {
             observations.push({
@@ -604,7 +624,7 @@ async function main() {
               observed_at: observedAt,
               start_at: start,
               end_at: end,
-              value_numeric: value,
+              value_numeric: normalized.valueNumeric ?? value,
               unit,
               interpretation: "unknown",
               source: "apple_health",

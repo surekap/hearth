@@ -8,11 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "mcp:hearth": "tsx scripts/hearth-mcp.ts",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
-    "health:import:apple": "tsx scripts/import-apple-health.ts"
+    "health:import:apple": "tsx scripts/import-apple-health.ts",
+    "health:normalize-data": "tsx scripts/normalize-health-data.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@vercel/blob": "^2.5.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",

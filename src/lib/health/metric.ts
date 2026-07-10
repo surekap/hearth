@@ -1,6 +1,10 @@
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { getMarkers, type Marker } from "./markers";
+import {
+  isImplausibleMetricObservation,
+  normalizeMetricRecord,
+} from "./normalization";
 import { categoryLabel } from "./systems";
 import {
   downsampleEven,
@@ -37,6 +41,7 @@ export async function getMetricIndex(profileId: string): Promise<MetricIndexRow[
       ot.id as type_id,
       ot.canonical_name as name,
       ot.category as category,
+      ot.normal_unit as normal_unit,
       coalesce(o.unit, ot.normal_unit) as unit,
       o.value_numeric as latest_value,
       o.value_text as latest_text,
@@ -45,13 +50,20 @@ export async function getMetricIndex(profileId: string): Promise<MetricIndexRow[
       count(*) over (partition by o.observation_type_id)::int as point_count
     from observations o
     join observation_types ot on ot.id = o.observation_type_id
-    where o.profile_id = ${profileId} and o.status = 'confirmed'
+    where o.profile_id = ${profileId}
+      and o.status = 'confirmed'
+      and not (
+        ot.canonical_name in ('BMI', 'Body Fat Percentage', 'Height', 'Lean Body Mass', 'Weight')
+        and o.value_numeric is not null
+        and o.value_numeric <= 0
+      )
     order by o.observation_type_id, o.observed_at desc
   `);
   const rows = result.rows as Array<{
     type_id: string;
     name: string;
     category: string;
+    normal_unit: string | null;
     unit: string | null;
     latest_value: number | null;
     latest_text: string | null;
@@ -60,24 +72,33 @@ export async function getMetricIndex(profileId: string): Promise<MetricIndexRow[
     point_count: number;
   }>;
   return rows
-    .map((r) => ({
-      typeId: r.type_id,
-      name: r.name,
-      category: r.category,
-      categoryLabel: categoryLabel(r.category),
-      unit: r.unit,
-      latestValue: r.latest_value == null ? null : Number(r.latest_value),
-      latestText: r.latest_text,
-      latestDate: new Date(r.latest_date).toISOString(),
-      interpretation: r.interpretation,
-      pointCount: Number(r.point_count),
-    }))
+    .map((r) => {
+      const normalized = normalizeMetricRecord({
+        metric: r.name,
+        normalUnit: r.normal_unit,
+        unit: r.unit,
+        valueNumeric: r.latest_value == null ? null : Number(r.latest_value),
+      });
+      return {
+        typeId: r.type_id,
+        name: r.name,
+        category: r.category,
+        categoryLabel: categoryLabel(r.category),
+        unit: normalized.unit,
+        latestValue: normalized.valueNumeric,
+        latestText: r.latest_text,
+        latestDate: new Date(r.latest_date).toISOString(),
+        interpretation: r.interpretation,
+        pointCount: Number(r.point_count),
+      };
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 type RawRow = {
   observedAt: Date;
   valueNumeric: number | null;
+  unit: string | null;
   referenceLow: number | null;
   referenceHigh: number | null;
   interpretation: Interpretation;
@@ -94,6 +115,7 @@ async function loadRawRows(profileId: string, typeId: string, start: Date | null
     .select({
       observedAt: schema.observations.observedAt,
       valueNumeric: schema.observations.valueNumeric,
+      unit: schema.observations.unit,
       referenceLow: schema.observations.referenceLow,
       referenceHigh: schema.observations.referenceHigh,
       interpretation: schema.observations.interpretation,
@@ -145,15 +167,72 @@ export async function loadMetricSeries(
   typeId: string,
   range: RangeKey
 ): Promise<MetricSeries> {
+  const type = await db.query.observationTypes.findFirst({
+    where: eq(schema.observationTypes.id, typeId),
+  });
+  if (!type) return { mode: "raw", period: null, caption: "0 recorded values", points: [] };
+
   const start = rangeStart(range);
-  const raw = (await loadRawRows(profileId, typeId, start)).filter(
-    (r): r is RawRow & { valueNumeric: number } => r.valueNumeric != null
-  );
+  const raw = (await loadRawRows(profileId, typeId, start))
+    .filter((r) => !isImplausibleMetricObservation(type.canonicalName, r.valueNumeric))
+    .map((r) => {
+      const normalized = normalizeMetricRecord({
+        metric: type.canonicalName,
+        normalUnit: type.normalUnit,
+        unit: r.unit,
+        valueNumeric: r.valueNumeric,
+        referenceLow: r.referenceLow,
+        referenceHigh: r.referenceHigh,
+      });
+      return {
+        ...r,
+        unit: normalized.unit,
+        valueNumeric: normalized.valueNumeric,
+        referenceLow: normalized.referenceLow,
+        referenceHigh: normalized.referenceHigh,
+      };
+    })
+    .filter((r): r is RawRow & { valueNumeric: number } => r.valueNumeric != null);
 
   if (shouldUseRollups(raw.length)) {
     const period = rollupPeriodFor(range);
     const buckets = await loadRollupBuckets(profileId, typeId, start, period);
-    const series = rollupSeries(buckets, period);
+    const series = rollupSeries(
+      buckets.map((bucket) => {
+        const avg = normalizeMetricRecord({
+          metric: type.canonicalName,
+          normalUnit: type.normalUnit,
+          unit: type.normalUnit,
+          valueNumeric: bucket.avgValue,
+        }).valueNumeric;
+        const sum = normalizeMetricRecord({
+          metric: type.canonicalName,
+          normalUnit: type.normalUnit,
+          unit: type.normalUnit,
+          valueNumeric: bucket.sumValue,
+        }).valueNumeric;
+        const min = normalizeMetricRecord({
+          metric: type.canonicalName,
+          normalUnit: type.normalUnit,
+          unit: type.normalUnit,
+          valueNumeric: bucket.minValue,
+        }).valueNumeric;
+        const max = normalizeMetricRecord({
+          metric: type.canonicalName,
+          normalUnit: type.normalUnit,
+          unit: type.normalUnit,
+          valueNumeric: bucket.maxValue,
+        }).valueNumeric;
+        return {
+          ...bucket,
+          avgValue: avg,
+          sumValue: sum,
+          minValue: min,
+          maxValue: max,
+        };
+      }),
+      period
+    );
     if (series.points.length > 0) return series;
     // No rollups for this metric — fall back to evenly sampled raw points.
     const sampled = downsampleEven(raw, MAX_RAW_POINTS);
@@ -224,6 +303,11 @@ export async function getMetricDetail(
     eq(schema.observations.observationTypeId, typeId),
     eq(schema.observations.status, "confirmed"),
   ];
+  if (isImplausibleMetricObservation(type.canonicalName, 0)) {
+    historyConditions.push(
+      sql`${schema.observations.valueNumeric} is null or ${schema.observations.valueNumeric} > 0`
+    );
+  }
   if (start) historyConditions.push(gte(schema.observations.observedAt, start));
 
   const [{ total }] = (await db
@@ -251,8 +335,28 @@ export async function getMetricDetail(
     .orderBy(desc(schema.observations.observedAt))
     .limit(HISTORY_LIMIT);
 
+  const normalizedHistory = historyRows
+    .filter((r) => !isImplausibleMetricObservation(type.canonicalName, r.valueNumeric))
+    .map((r) => {
+      const normalized = normalizeMetricRecord({
+        metric: type.canonicalName,
+        normalUnit: type.normalUnit,
+        unit: r.unit,
+        valueNumeric: r.valueNumeric,
+        referenceLow: r.referenceLow,
+        referenceHigh: r.referenceHigh,
+      });
+      return {
+        ...r,
+        unit: normalized.unit,
+        valueNumeric: normalized.valueNumeric,
+        referenceLow: normalized.referenceLow,
+        referenceHigh: normalized.referenceHigh,
+      };
+    });
+
   const numericPoints = series.points.map((p) => p.value);
-  const latestHistory = historyRows.find((r) => r.valueNumeric != null);
+  const latestHistory = normalizedHistory.find((r) => r.valueNumeric != null);
   const stats =
     latestHistory && numericPoints.length > 0
       ? {
@@ -277,7 +381,7 @@ export async function getMetricDetail(
     range,
     series,
     stats,
-    history: historyRows.map((r) => ({ ...r, observedAt: r.observedAt.toISOString() })),
+    history: normalizedHistory.map((r) => ({ ...r, observedAt: r.observedAt.toISOString() })),
     historyTotal: total,
     markers: await getMarkers(profileId, start),
   };

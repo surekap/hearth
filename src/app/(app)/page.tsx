@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/mascot";
+import { normalizeMetricRecord } from "@/lib/health/normalization";
+import { formatMetricValue } from "@/lib/health/series";
 
 type TimelineEvent = {
   date: Date;
@@ -54,6 +56,7 @@ export default async function TimelinePage() {
         unit: schema.observations.unit,
         typeName: schema.observationTypes.canonicalName,
         typeId: schema.observationTypes.id,
+        normalUnit: schema.observationTypes.normalUnit,
       })
       .from(schema.observations)
       .innerJoin(
@@ -115,11 +118,20 @@ export default async function TimelinePage() {
       list.push(o);
       byDoc.set(o.documentId, list);
     } else {
+      const normalized = normalizeMetricRecord({
+        metric: o.typeName,
+        normalUnit: o.normalUnit,
+        unit: o.unit,
+        valueNumeric: o.valueNumeric,
+      });
       events.push({
         date: o.observedAt,
         kind: "manual",
         title: `${o.typeName} recorded`,
-        detail: `${o.valueNumeric ?? o.valueText ?? ""} ${o.unit ?? ""}`.trim(),
+        detail:
+          o.valueNumeric != null
+            ? formatMetricValue(normalized.valueNumeric ?? o.valueNumeric, normalized.unit)
+            : `${o.valueText ?? ""} ${o.unit ?? ""}`.trim(),
         href: `/metrics/${o.typeId}`,
         badge:
           o.interpretation === "high" || o.interpretation === "critical"

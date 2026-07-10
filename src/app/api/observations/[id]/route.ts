@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db, schema } from "@/db";
 import { requireUser, requireProfile, handleApiError, ApiError } from "@/lib/api";
 import { computeInterpretation } from "@/lib/extraction/canonical";
+import { normalizeMetricRecord } from "@/lib/health/normalization";
 
 async function loadOwned(id: string, userId: string) {
   const row = await db.query.observations.findFirst({
@@ -40,21 +41,33 @@ export async function PATCH(
       body.referenceLow !== undefined ? body.referenceLow : row.referenceLow;
     const referenceHigh =
       body.referenceHigh !== undefined ? body.referenceHigh : row.referenceHigh;
+    const type = await db.query.observationTypes.findFirst({
+      where: eq(schema.observationTypes.id, row.observationTypeId),
+    });
+    if (!type) throw new ApiError(400, "Unknown observation type");
+    const normalized = normalizeMetricRecord({
+      metric: type.canonicalName,
+      normalUnit: type.normalUnit,
+      unit: body.unit !== undefined ? body.unit : row.unit,
+      valueNumeric,
+      referenceLow,
+      referenceHigh,
+    });
 
     const [updated] = await db
       .update(schema.observations)
       .set({
         observedAt: body.observedAt ? new Date(body.observedAt) : row.observedAt,
-        valueNumeric,
+        valueNumeric: normalized.valueNumeric,
         valueText: body.valueText !== undefined ? body.valueText : row.valueText,
-        unit: body.unit !== undefined ? body.unit : row.unit,
-        referenceLow,
-        referenceHigh,
+        unit: normalized.unit,
+        referenceLow: normalized.referenceLow,
+        referenceHigh: normalized.referenceHigh,
         status: body.status ?? row.status,
         interpretation: computeInterpretation(
-          valueNumeric,
-          referenceLow,
-          referenceHigh,
+          normalized.valueNumeric,
+          normalized.referenceLow,
+          normalized.referenceHigh,
           row.interpretation
         ),
         updatedAt: new Date(),

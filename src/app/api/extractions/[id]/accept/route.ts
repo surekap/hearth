@@ -12,6 +12,8 @@ import {
   normalizeObservationName,
   type ObservationTypeRow,
 } from "@/lib/extraction/canonical";
+import { normalizeMetricRecord } from "@/lib/health/normalization";
+import { derivePrescriptionCourse } from "@/lib/medication-course";
 import { recordMedicationEvent, upsertMedicationMaster } from "@/lib/medications";
 
 const bodySchema = z.object({
@@ -329,20 +331,29 @@ export async function POST(
             ? new Date(doc.documentDate)
             : doc.uploadedAt;
 
+        const normalized = normalizeMetricRecord({
+          metric: type.canonicalName,
+          normalUnit: type.normalUnit,
+          unit: raw.unit ?? type.normalUnit,
+          valueNumeric: raw.value ?? null,
+          referenceLow: raw.reference_low ?? null,
+          referenceHigh: raw.reference_high ?? null,
+        });
+
         await db.insert(schema.observations).values({
           profileId: job.profileId,
           documentId: doc.id,
           observationTypeId: type.id,
           observedAt,
-          valueNumeric: raw.value ?? null,
+          valueNumeric: normalized.valueNumeric,
           valueText: raw.value_text ?? null,
-          unit: raw.unit ?? type.normalUnit,
-          referenceLow: raw.reference_low ?? null,
-          referenceHigh: raw.reference_high ?? null,
+          unit: normalized.unit,
+          referenceLow: normalized.referenceLow,
+          referenceHigh: normalized.referenceHigh,
           interpretation: computeInterpretation(
-            raw.value ?? null,
-            raw.reference_low ?? null,
-            raw.reference_high ?? null,
+            normalized.valueNumeric,
+            normalized.referenceLow,
+            normalized.referenceHigh,
             raw.interpretation ?? "unknown"
           ),
           source: "document",
@@ -378,6 +389,7 @@ export async function POST(
           strength?: string | null;
           dose?: string | null;
           frequency?: string | null;
+          duration?: string | null;
           report_date?: string | null;
         };
         const name = raw.brand_name ?? raw.generic_name;
@@ -388,19 +400,22 @@ export async function POST(
             strength: raw.strength,
             source: "prescription",
           });
+          const prescribedAt = raw.report_date
+            ? new Date(raw.report_date)
+            : doc.documentDate
+              ? new Date(doc.documentDate)
+              : doc.uploadedAt;
+          const course = derivePrescriptionCourse(prescribedAt, raw.duration);
           await recordMedicationEvent({
             profileId: job.profileId,
             nameText: name,
             dose: raw.dose ?? raw.strength,
             frequency: raw.frequency,
             eventType: "prescribed",
-            eventTime: raw.report_date
-              ? new Date(raw.report_date)
-              : doc.documentDate
-                ? new Date(doc.documentDate)
-                : doc.uploadedAt,
+            eventTime: prescribedAt,
             documentId: doc.id,
             medicationMasterId: master?.id ?? null,
+            ...course,
           });
         }
       } else if (item.itemType === "genetic_variant") {

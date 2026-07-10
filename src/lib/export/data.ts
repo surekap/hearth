@@ -1,5 +1,9 @@
 import { asc, desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
+import {
+  isImplausibleMetricObservation,
+  normalizeMetricRecord,
+} from "@/lib/health/normalization";
 
 /** Everything needed to export one profile, loaded profile-scoped in one place. */
 export async function loadProfileBundle(profileId: string) {
@@ -36,6 +40,7 @@ export async function loadProfileBundle(profileId: string) {
         source: schema.observations.source,
         documentId: schema.observations.documentId,
         typeName: schema.observationTypes.canonicalName,
+        normalUnit: schema.observationTypes.normalUnit,
         category: schema.observationTypes.category,
         loincCode: schema.observationTypes.loincCode,
       })
@@ -81,6 +86,7 @@ export async function loadProfileBundle(profileId: string) {
         aggregation: schema.healthRollups.aggregation,
         sourceObservationCount: schema.healthRollups.sourceObservationCount,
         typeName: schema.observationTypes.canonicalName,
+        normalUnit: schema.observationTypes.normalUnit,
         category: schema.observationTypes.category,
       })
       .from(schema.healthRollups)
@@ -109,7 +115,41 @@ export async function loadProfileBundle(profileId: string) {
   ]);
 
   // Exports only include confirmed clinical data.
-  const confirmed = observations.filter((o) => o.status === "confirmed");
+  const confirmed = observations
+    .filter((o) => o.status === "confirmed")
+    .filter((o) => !isImplausibleMetricObservation(o.typeName, o.valueNumeric))
+    .map((o) => {
+      const normalized = normalizeMetricRecord({
+        metric: o.typeName,
+        normalUnit: o.normalUnit,
+        unit: o.unit,
+        valueNumeric: o.valueNumeric,
+        referenceLow: o.referenceLow,
+        referenceHigh: o.referenceHigh,
+      });
+      return {
+        ...o,
+        unit: normalized.unit,
+        valueNumeric: normalized.valueNumeric,
+        referenceLow: normalized.referenceLow,
+        referenceHigh: normalized.referenceHigh,
+      };
+    });
+  const normalizedRollups = healthRollups
+    .filter((row) => !isImplausibleMetricObservation(row.typeName, row.valueNumeric))
+    .map((row) => {
+      const normalized = normalizeMetricRecord({
+        metric: row.typeName,
+        normalUnit: row.normalUnit,
+        unit: row.unit,
+        valueNumeric: row.valueNumeric,
+      });
+      return {
+        ...row,
+        unit: normalized.unit,
+        valueNumeric: normalized.valueNumeric ?? row.valueNumeric,
+      };
+    });
   return {
     profile,
     observations: confirmed,
@@ -119,7 +159,7 @@ export async function loadProfileBundle(profileId: string) {
     recentMeds,
     healthImports,
     healthEvents,
-    healthRollups,
+    healthRollups: normalizedRollups,
     geneticReports,
     geneticVariants,
     geneticRisks,

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db, schema } from "@/db";
 import { requireUser, requireProfile, handleApiError, ApiError } from "@/lib/api";
 import { computeInterpretation } from "@/lib/extraction/canonical";
+import { normalizeMetricRecord } from "@/lib/health/normalization";
 
 export async function GET(req: NextRequest) {
   try {
@@ -57,6 +58,14 @@ export async function POST(req: NextRequest) {
       where: eq(schema.observationTypes.id, body.observationTypeId),
     });
     if (!type) throw new ApiError(400, "Unknown observation type");
+    const normalized = normalizeMetricRecord({
+      metric: type.canonicalName,
+      normalUnit: type.normalUnit,
+      unit: body.unit ?? type.normalUnit,
+      valueNumeric: body.valueNumeric ?? null,
+      referenceLow: body.referenceLow ?? null,
+      referenceHigh: body.referenceHigh ?? null,
+    });
 
     const [row] = await db
       .insert(schema.observations)
@@ -64,15 +73,15 @@ export async function POST(req: NextRequest) {
         profileId: body.profileId,
         observationTypeId: body.observationTypeId,
         observedAt: new Date(body.observedAt),
-        valueNumeric: body.valueNumeric ?? null,
+        valueNumeric: normalized.valueNumeric,
         valueText: body.valueText ?? null,
-        unit: body.unit ?? type.normalUnit,
-        referenceLow: body.referenceLow ?? null,
-        referenceHigh: body.referenceHigh ?? null,
+        unit: normalized.unit,
+        referenceLow: normalized.referenceLow,
+        referenceHigh: normalized.referenceHigh,
         interpretation: computeInterpretation(
-          body.valueNumeric ?? null,
-          body.referenceLow ?? null,
-          body.referenceHigh ?? null,
+          normalized.valueNumeric,
+          normalized.referenceLow,
+          normalized.referenceHigh,
           "unknown"
         ),
         source: "manual",

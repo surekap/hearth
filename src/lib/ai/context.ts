@@ -1,5 +1,9 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
+import {
+  isImplausibleMetricObservation,
+  normalizeMetricRecord,
+} from "@/lib/health/normalization";
 import { redactDeep } from "./redact";
 
 export type AiContext = {
@@ -107,7 +111,9 @@ export async function buildAiContext(
       referenceLow: schema.observations.referenceLow,
       referenceHigh: schema.observations.referenceHigh,
       interpretation: schema.observations.interpretation,
+      externalSourceType: schema.observations.externalSourceType,
       typeName: schema.observationTypes.canonicalName,
+      normalUnit: schema.observationTypes.normalUnit,
       category: schema.observationTypes.category,
     })
     .from(schema.observations)
@@ -135,6 +141,7 @@ export async function buildAiContext(
       aggregation: schema.healthRollups.aggregation,
       sourceObservationCount: schema.healthRollups.sourceObservationCount,
       typeName: schema.observationTypes.canonicalName,
+      normalUnit: schema.observationTypes.normalUnit,
       category: schema.observationTypes.category,
     })
     .from(schema.healthRollups)
@@ -190,13 +197,53 @@ export async function buildAiContext(
       )
     : null;
 
+  const normalizedObservations = rows
+    .filter(
+      (r) => !isImplausibleMetricObservation(r.typeName, r.valueNumeric)
+    )
+    .map((r) => {
+      const normalized = normalizeMetricRecord({
+        metric: r.typeName,
+        normalUnit: r.normalUnit,
+        unit: r.unit,
+        valueNumeric: r.valueNumeric,
+        referenceLow: r.referenceLow,
+        referenceHigh: r.referenceHigh,
+      });
+      return {
+        ...r,
+        unit: normalized.unit,
+        valueNumeric: normalized.valueNumeric,
+        referenceLow: normalized.referenceLow,
+        referenceHigh: normalized.referenceHigh,
+      };
+    });
+
+  const normalizedRollups = rollups
+    .filter(
+      (r) => !isImplausibleMetricObservation(r.typeName, r.valueNumeric)
+    )
+    .map((r) => {
+      const normalized = normalizeMetricRecord({
+        metric: r.typeName,
+        normalUnit: r.normalUnit,
+        unit: r.unit,
+        valueNumeric: r.valueNumeric,
+      });
+      return {
+        ...r,
+        unit: normalized.unit,
+        valueNumeric: normalized.valueNumeric ?? r.valueNumeric,
+      };
+    });
+
   const context: AiContext = {
     profile: {
       relationship: profile.relationship,
       ageYears,
       sexAtBirth: profile.sexAtBirth,
     },
-    observations: rows.map((r) => ({
+    observations: normalizedObservations.map((r) => ({
       test: r.typeName,
       category: r.category,
       date: r.observedAt.toISOString().slice(0, 10),
@@ -213,7 +260,7 @@ export async function buildAiContext(
       summary: r.summary,
       impression: r.impression,
     })),
-    healthRollups: rollups.map((r) => ({
+    healthRollups: normalizedRollups.map((r) => ({
       metric: r.typeName,
       category: r.category,
       period: r.period,
@@ -267,8 +314,11 @@ export async function buildAiContext(
       notedAt: d.notedAt.toISOString().slice(0, 10),
     })),
     timeRange: {
-      from: rows[0]?.observedAt.toISOString().slice(0, 10) ?? null,
-      to: rows[rows.length - 1]?.observedAt.toISOString().slice(0, 10) ?? null,
+      from: normalizedObservations[0]?.observedAt.toISOString().slice(0, 10) ?? null,
+      to:
+        normalizedObservations[normalizedObservations.length - 1]?.observedAt
+          .toISOString()
+          .slice(0, 10) ?? null,
     },
   };
 

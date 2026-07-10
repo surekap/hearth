@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/active-profile";
 import { generateInsights, getInsights } from "@/lib/ai/insights";
+import { toInsightForClient } from "@/lib/ai/insight-presenter";
 import { AskView } from "./ask-view";
 
 export default async function AskPage() {
@@ -25,15 +26,7 @@ export default async function AskPage() {
     <AskView
       profileId={profile.id}
       profileName={profile.displayName}
-      initialInsights={insights.map((i) => ({
-        id: i.id,
-        title: i.title,
-        body: i.body,
-        tone: i.tone,
-        category: i.category,
-        model: i.model,
-        createdAt: i.createdAt.toISOString(),
-      }))}
+      initialInsights={insights.map(toInsightForClient)}
     />
   );
 }

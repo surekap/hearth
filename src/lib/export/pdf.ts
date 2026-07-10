@@ -196,14 +196,19 @@ export async function buildDoctorPdf(bundle: ProfileBundle): Promise<Uint8Array>
         { t: "Medicine", font: bold },
         { t: "Dose", font: bold },
         { t: "Frequency", font: bold },
+        { t: "Course", font: bold },
         { t: "Last logged", font: bold },
       ],
-      [0, 190, 290, 420]
+      [0, 150, 240, 340, 440]
     );
     for (const m of bundle.recentMeds.slice(0, 15)) {
+      const course =
+        m.courseStartDate || m.courseEndDate
+          ? `${m.courseStartDate ?? "—"} – ${m.courseEndDate ?? "—"}`
+          : "—";
       cols(
-        [m.nameText, m.dose ?? "—", m.frequency ?? "—", fmtDate(m.lastUsedAt)],
-        [0, 190, 290, 420]
+        [m.nameText, m.dose ?? "—", m.frequency ?? "—", course, fmtDate(m.lastUsedAt)],
+        [0, 150, 240, 340, 440]
       );
     }
   }

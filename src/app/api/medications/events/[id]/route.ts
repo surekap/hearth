@@ -58,6 +58,9 @@ export async function DELETE(
           medicationMasterId: latest.medicationMasterId,
           dose: latest.dose,
           frequency: latest.frequency,
+          courseStartDate: latest.courseStartDate,
+          courseEndDate: latest.courseEndDate,
+          courseDurationText: latest.courseDurationText,
           lastUsedAt: latest.eventTime,
           useCount: count,
         })

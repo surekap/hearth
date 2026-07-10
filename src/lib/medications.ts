@@ -11,6 +11,9 @@ export async function recordMedicationEvent(input: {
   dose?: string | null;
   route?: string | null;
   frequency?: string | null;
+  courseStartDate?: string | null;
+  courseEndDate?: string | null;
+  courseDurationText?: string | null;
   eventType?:
     | "prescribed"
     | "started"
@@ -32,6 +35,9 @@ export async function recordMedicationEvent(input: {
       dose: input.dose ?? null,
       route: input.route ?? null,
       frequency: input.frequency ?? null,
+      courseStartDate: input.courseStartDate ?? null,
+      courseEndDate: input.courseEndDate ?? null,
+      courseDurationText: input.courseDurationText ?? null,
       eventType: input.eventType ?? "intake_logged",
       eventTime: input.eventTime ?? new Date(),
       documentId: input.documentId ?? null,
@@ -47,6 +53,9 @@ export async function recordMedicationEvent(input: {
       nameText: input.nameText,
       dose: input.dose ?? null,
       frequency: input.frequency ?? null,
+      courseStartDate: input.courseStartDate ?? null,
+      courseEndDate: input.courseEndDate ?? null,
+      courseDurationText: input.courseDurationText ?? null,
       lastUsedAt: event.eventTime,
       useCount: 1,
     })
@@ -57,6 +66,10 @@ export async function recordMedicationEvent(input: {
         useCount: sql`${schema.recentMedications.useCount} + 1`,
         dose: input.dose ?? sql`${schema.recentMedications.dose}`,
         frequency: input.frequency ?? sql`${schema.recentMedications.frequency}`,
+        courseStartDate: input.courseStartDate ?? sql`${schema.recentMedications.courseStartDate}`,
+        courseEndDate: input.courseEndDate ?? sql`${schema.recentMedications.courseEndDate}`,
+        courseDurationText:
+          input.courseDurationText ?? sql`${schema.recentMedications.courseDurationText}`,
       },
     });
 

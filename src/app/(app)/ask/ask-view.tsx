@@ -38,6 +38,7 @@ type Insight = {
   category: string | null;
   model: string;
   createdAt: string;
+  createdAtLabel: string;
 };
 
 const INSIGHT_TONE_STYLES: Record<Insight["tone"], { card: string; badge: string; label: string }> = {
@@ -214,12 +215,7 @@ export function AskView({
             })}
           </div>
           <p className="text-right text-[10px] text-muted-foreground">
-            Generated {new Date(insights[0].createdAt).toLocaleString("en-IN", {
-              day: "numeric",
-              month: "short",
-              hour: "numeric",
-              minute: "2-digit",
-            })}{" "}
+            Generated {insights[0].createdAtLabel}{" "}
             · {insights[0].model} · updates automatically when new results are confirmed
           </p>
         </div>
@@ -307,6 +303,7 @@ export function AskView({
         className="sticky bottom-20 flex items-end gap-2 rounded-lg border bg-background/90 p-2 shadow-xl shadow-primary/10 backdrop-blur md:bottom-4"
       >
         <Textarea
+          name="question"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {

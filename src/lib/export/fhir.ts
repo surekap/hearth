@@ -169,7 +169,14 @@ export function buildFhirBundle(bundle: ProfileBundle) {
               ? "not-taken"
               : "active",
         subject: { reference: `Patient/${patientId}` },
-        effectiveDateTime: m.eventTime.toISOString(),
+        ...(m.courseStartDate || m.courseEndDate
+          ? {
+              effectivePeriod: {
+                start: m.courseStartDate ?? undefined,
+                end: m.courseEndDate ?? undefined,
+              },
+            }
+          : { effectiveDateTime: m.eventTime.toISOString() }),
         medicationCodeableConcept: { text: m.nameText },
         dosage:
           m.dose || m.frequency

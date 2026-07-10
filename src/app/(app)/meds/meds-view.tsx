@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Pill, Plus, RotateCcw } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Pill, Plus, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +25,9 @@ type Recent = {
   nameText: string;
   dose: string | null;
   frequency: string | null;
+  courseStartDate: string | null;
+  courseEndDate: string | null;
+  courseDurationText: string | null;
   lastUsedAt: string;
   useCount: number;
 };
@@ -34,6 +37,9 @@ type Event = {
   nameText: string;
   dose: string | null;
   frequency: string | null;
+  courseStartDate: string | null;
+  courseEndDate: string | null;
+  courseDurationText: string | null;
   eventType: string;
   eventTime: string;
   notes: string | null;
@@ -64,6 +70,25 @@ const EVENT_TONE: Record<string, string> = {
   dose_changed: "bg-[var(--chart-5)]/12 text-[var(--chart-5)]",
 };
 
+function todayDateOnly() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function isExpired(endDate: string | null) {
+  return !!endDate && endDate < todayDateOnly();
+}
+
+function formatDate(date: string | null) {
+  if (!date) return null;
+  return new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export function MedsView({
   profileId,
   profileName,
@@ -88,6 +113,9 @@ export function MedsView({
   const [name, setName] = useState("");
   const [dose, setDose] = useState("");
   const [frequency, setFrequency] = useState("");
+  const [courseStartDate, setCourseStartDate] = useState("");
+  const [courseEndDate, setCourseEndDate] = useState("");
+  const [courseDurationText, setCourseDurationText] = useState("");
   const [eventType, setEventType] = useState("started");
   const [results, setResults] = useState<SearchResult[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,10 +153,36 @@ export function MedsView({
         setJustLogged(r.nameText);
         setTimeout(() => setJustLogged(null), 2000);
         router.refresh();
+      } else if (res.status === 409) {
+        openManualEntry(r, "intake_logged");
       }
     } finally {
       setLogging(null);
     }
+  }
+
+  function resetManualForm() {
+    setName("");
+    setDose("");
+    setFrequency("");
+    setCourseStartDate("");
+    setCourseEndDate("");
+    setCourseDurationText("");
+    setEventType("started");
+  }
+
+  function openManualEntry(recent?: Recent, nextEventType = "started") {
+    setPendingQuickLog(null);
+    if (recent) {
+      setName(recent.nameText);
+      setDose(recent.dose ?? "");
+      setFrequency(recent.frequency ?? "");
+      setCourseStartDate(recent.courseStartDate ?? "");
+      setCourseEndDate(recent.courseEndDate ?? "");
+      setCourseDurationText(recent.courseDurationText ?? "");
+      setEventType(nextEventType);
+    }
+    setAddOpen(true);
   }
 
   async function addMedication() {
@@ -143,15 +197,17 @@ export function MedsView({
           nameText: name.trim(),
           dose: dose || null,
           frequency: frequency || null,
+          courseStartDate: courseStartDate || null,
+          courseEndDate: courseEndDate || null,
+          courseDurationText: courseDurationText || null,
           eventType,
           addToDictionary: true,
+          allowAfterCourseEnd: true,
         }),
       });
       if (res.ok) {
         setAddOpen(false);
-        setName("");
-        setDose("");
-        setFrequency("");
+        resetManualForm();
         router.refresh();
       }
     } finally {
@@ -186,7 +242,13 @@ export function MedsView({
             {profileName}&apos;s medicines — one tap to log a dose
           </p>
         </div>
-        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <Dialog
+          open={addOpen}
+          onOpenChange={(open) => {
+            setAddOpen(open);
+            if (!open) resetManualForm();
+          }}
+        >
           <DialogTrigger asChild>
             <Button>
               <Plus className="size-4" />
@@ -261,6 +323,32 @@ export function MedsView({
                   <option value="intake_logged">Took a dose now</option>
                 </select>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label>Start date</Label>
+                  <Input
+                    type="date"
+                    value={courseStartDate}
+                    onChange={(e) => setCourseStartDate(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>End date</Label>
+                  <Input
+                    type="date"
+                    value={courseEndDate}
+                    onChange={(e) => setCourseEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Duration</Label>
+                <Input
+                  value={courseDurationText}
+                  onChange={(e) => setCourseDurationText(e.target.value)}
+                  placeholder="2 weeks"
+                />
+              </div>
               <Button onClick={addMedication} disabled={saving || !name.trim()}>
                 {saving && <Loader2 className="size-4 animate-spin" />}
                 Save
@@ -284,28 +372,41 @@ export function MedsView({
             />
           ) : (
             <div className="flex flex-wrap gap-2">
-              {recents.map((r) => (
-                <button
-                  key={r.nameText}
-                  onClick={() => setPendingQuickLog(r)}
-                  disabled={logging !== null}
-                  className={cn(
-                    "flex min-h-10 items-center gap-2 rounded-lg border px-3.5 py-2 text-sm shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-primary/5",
-                    justLogged === r.nameText &&
-                      "border-[var(--success)] bg-[var(--success)]/10"
-                  )}
-                >
-                  {logging === r.nameText ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : justLogged === r.nameText ? (
-                    <Check className="size-3.5 text-[var(--success)]" />
-                  ) : (
-                    <Pill className="size-3.5 text-primary" />
-                  )}
-                  <span className="font-medium">{r.nameText}</span>
-                  {r.dose && <span className="text-xs text-muted-foreground">{r.dose}</span>}
-                </button>
-              ))}
+              {recents.map((r) => {
+                const ended = isExpired(r.courseEndDate);
+                return (
+                  <button
+                    key={r.nameText}
+                    onClick={() =>
+                      ended ? openManualEntry(r, "intake_logged") : setPendingQuickLog(r)
+                    }
+                    disabled={logging !== null}
+                    className={cn(
+                      "flex min-h-10 items-center gap-2 rounded-lg border px-3.5 py-2 text-sm shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-primary/5",
+                      justLogged === r.nameText &&
+                        "border-[var(--success)] bg-[var(--success)]/10",
+                      ended && "border-[var(--warning)]/60 bg-[var(--warning)]/10"
+                    )}
+                  >
+                    {logging === r.nameText ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : justLogged === r.nameText ? (
+                      <Check className="size-3.5 text-[var(--success)]" />
+                    ) : ended ? (
+                      <AlertTriangle className="size-3.5 text-[var(--warning)]" />
+                    ) : (
+                      <Pill className="size-3.5 text-primary" />
+                    )}
+                    <span className="font-medium">{r.nameText}</span>
+                    {r.dose && <span className="text-xs text-muted-foreground">{r.dose}</span>}
+                    {ended && (
+                      <span className="text-xs text-muted-foreground">
+                        ended {formatDate(r.courseEndDate)}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -402,6 +503,7 @@ export function MedsView({
                       minute: "2-digit",
                     })}
                     {e.frequency ? ` · ${e.frequency}` : ""}
+                    {e.courseEndDate ? ` · ends ${formatDate(e.courseEndDate)}` : ""}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">

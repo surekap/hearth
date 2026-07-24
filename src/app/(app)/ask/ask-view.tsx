@@ -300,7 +300,7 @@ export function AskView({
           e.preventDefault();
           ask(input);
         }}
-        className="sticky bottom-20 flex items-end gap-2 rounded-lg border bg-background/90 p-2 shadow-xl shadow-primary/10 backdrop-blur md:bottom-4"
+        className="flex items-end gap-2 rounded-lg border bg-background/90 p-2 shadow-xl shadow-primary/10 backdrop-blur md:sticky md:bottom-4"
       >
         <Textarea
           name="question"

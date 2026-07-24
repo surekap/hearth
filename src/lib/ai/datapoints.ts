@@ -79,6 +79,7 @@ export async function extractDatapoints(message: string): Promise<CapturedDatapo
     const client = new OpenAI();
     const response = await client.responses.create({
       model: extractionModel(),
+      reasoning: { effort: "none" },
       instructions: CAPTURE_PROMPT,
       input: [{ role: "user", content: [{ type: "input_text", text: message }] }],
       text: {

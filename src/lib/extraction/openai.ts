@@ -73,6 +73,7 @@ export async function extractWithOpenAI(input: {
       model,
       instructions: SYSTEM_PROMPT,
       max_output_tokens: 16000,
+      reasoning: { effort: "none" },
       input: [
         {
           role: "user",

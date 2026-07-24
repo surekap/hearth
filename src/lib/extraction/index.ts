@@ -4,11 +4,8 @@ import { decryptBuffer } from "@/lib/crypto";
 import { getObject } from "@/lib/storage";
 import { extractWithOpenAI, type ProviderOutput } from "./openai";
 import { extractWithMock } from "./mock";
-
-export function extractionProviderName(): "openai" | "mock" {
-  if (process.env.EXTRACTION_PROVIDER === "mock") return "mock";
-  return process.env.OPENAI_API_KEY ? "openai" : "mock";
-}
+import { extractionProviderName } from "./provider";
+export { extractionProviderName } from "./provider";
 
 type ProcessResult = { jobId: string; itemCount: number; warnings: string[] };
 

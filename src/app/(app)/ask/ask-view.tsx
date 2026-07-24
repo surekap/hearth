@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 import {
   ClipboardPlus,
   Loader2,
+  MessageSquarePlus,
+  MessagesSquare,
   RefreshCw,
   Send,
   ShieldCheck,
@@ -39,6 +41,12 @@ type Insight = {
   model: string;
   createdAt: string;
   createdAtLabel: string;
+};
+
+type Conversation = {
+  id: string;
+  title: string;
+  updatedAt: string;
 };
 
 const INSIGHT_TONE_STYLES: Record<Insight["tone"], { card: string; badge: string; label: string }> = {
@@ -93,18 +101,59 @@ export function AskView({
   profileId,
   profileName,
   initialInsights,
+  initialConversations,
+  initialConversationId,
+  initialMessages,
 }: {
   profileId: string;
   profileName: string;
   initialInsights: Insight[];
+  initialConversations: Conversation[];
+  initialConversationId: string | null;
+  initialMessages: Message[];
 }) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [conversations, setConversations] =
+    useState<Conversation[]>(initialConversations);
+  const [activeConversationId, setActiveConversationId] =
+    useState<string | null>(initialConversationId);
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingConversation, setLoadingConversation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<Insight[]>(initialInsights);
   const [refreshing, setRefreshing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  function startNewConversation() {
+    setActiveConversationId(null);
+    setMessages([]);
+    setInput("");
+    setError(null);
+  }
+
+  async function switchConversation(conversationId: string) {
+    if (conversationId === activeConversationId || loadingConversation) return;
+    setLoadingConversation(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/ai/conversations/${conversationId}?profileId=${encodeURIComponent(profileId)}`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof data.error === "string" ? data.error : "Could not load topic");
+      }
+      setActiveConversationId(data.conversation.id);
+      setMessages(data.messages);
+      setInput("");
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load topic");
+    } finally {
+      setLoadingConversation(false);
+    }
+  }
 
   async function refreshInsights() {
     setRefreshing(true);
@@ -133,12 +182,22 @@ export function AskView({
       const res = await fetch("/api/ai/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId, question }),
+        body: JSON.stringify({
+          profileId,
+          conversationId: activeConversationId ?? undefined,
+          question,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(typeof data.error === "string" ? data.error : "Request failed");
       }
+      const conversation = data.conversation as Conversation;
+      setActiveConversationId(conversation.id);
+      setConversations((current) => [
+        conversation,
+        ...current.filter((item) => item.id !== conversation.id),
+      ]);
       setMessages((m) => [
         ...m,
         {
@@ -157,8 +216,63 @@ export function AskView({
   }
 
   return (
-    <div className="mx-auto grid max-w-3xl gap-4">
-      <div>
+    <div className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
+      <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
+        <div className="grid gap-2 rounded-xl border bg-card/70 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+              <MessagesSquare className="size-4 shrink-0 text-primary" />
+              <span className="truncate">{profileName}&apos;s topics</span>
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={startNewConversation}
+              disabled={busy}
+              aria-label="Start a new health topic"
+              className="shrink-0"
+            >
+              <MessageSquarePlus className="size-4" />
+              <span className="hidden sm:inline lg:hidden xl:inline">New</span>
+            </Button>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 lg:grid lg:max-h-[65vh] lg:overflow-y-auto">
+            {conversations.length === 0 && (
+              <p className="py-2 text-xs leading-5 text-muted-foreground">
+                Start a topic about blood, bones, weight, medication, or anything else.
+              </p>
+            )}
+            {conversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                type="button"
+                onClick={() => switchConversation(conversation.id)}
+                disabled={loadingConversation}
+                aria-pressed={conversation.id === activeConversationId}
+                className={cn(
+                  "min-w-52 rounded-lg border px-3 py-2 text-left transition-colors lg:min-w-0",
+                  conversation.id === activeConversationId
+                    ? "border-primary/35 bg-accent text-accent-foreground"
+                    : "bg-background/70 hover:bg-accent/60"
+                )}
+              >
+                <span className="block truncate text-sm font-medium">{conversation.title}</span>
+                <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                  {new Date(conversation.updatedAt).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </aside>
+
+      <div className="grid min-w-0 gap-4">
+        <div>
         <div className="mb-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground">
           <Sparkles className="size-3.5" />
           Ask AI
@@ -315,10 +429,15 @@ export function AskView({
           placeholder={`Ask about ${profileName}'s confirmed results…`}
           className="min-h-[52px] resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
         />
-        <Button type="submit" size="icon" disabled={busy || !input.trim()}>
+        <Button
+          type="submit"
+          size="icon"
+          disabled={busy || loadingConversation || !input.trim()}
+        >
           <Send className="size-4" />
         </Button>
       </form>
+        </div>
     </div>
   );
 }

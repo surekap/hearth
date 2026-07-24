@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { requireUser, requireProfile, handleApiError, logAudit } from "@/lib/api";
+import {
+  ApiError,
+  requireUser,
+  requireProfile,
+  handleApiError,
+  logAudit,
+} from "@/lib/api";
 import { getAccessibleProfiles } from "@/lib/profile-access";
 import { buildAiContext } from "@/lib/ai/context";
 import { answerWithOpenAI, answerWithMock } from "@/lib/ai/answer";
@@ -9,12 +16,18 @@ import { tryRuleAnswer } from "@/lib/ai/rules";
 import { findDocumentSnippets } from "@/lib/ai/snippets";
 import { extractDatapoints, storeDatapoints } from "@/lib/ai/datapoints";
 import { REDACTION_VERSION, redactPII } from "@/lib/ai/redact";
+import {
+  getConversation,
+  getRecentConversationHistory,
+} from "@/lib/ai/conversations";
+import { conversationTitle } from "@/lib/ai/conversation-title";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const bodySchema = z.object({
   profileId: z.string().uuid(),
+  conversationId: z.string().uuid().optional(),
   question: z.string().min(3).max(2000),
 });
 
@@ -28,6 +41,12 @@ export async function POST(req: NextRequest) {
     const { userId } = await requireUser();
     const body = bodySchema.parse(await req.json());
     await requireProfile(userId, body.profileId);
+    const existingConversation = body.conversationId
+      ? await getConversation(body.conversationId, body.profileId, userId)
+      : null;
+    if (body.conversationId && !existingConversation) {
+      throw new ApiError(404, "Conversation not found");
+    }
 
     const now = Date.now();
     const recent = (lastAsk.get(userId) ?? []).filter((t) => now - t < WINDOW_MS);
@@ -55,6 +74,9 @@ export async function POST(req: NextRequest) {
     // Profile isolation happens inside buildAiContext, before any retrieval.
     const context = await buildAiContext(body.profileId, knownNames);
     const question = redactPII(body.question, knownNames);
+    const history = existingConversation
+      ? await getRecentConversationHistory(existingConversation.id)
+      : [];
 
     // 1. Rules engine: numeric trend/latest/abnormal questions never hit the LLM.
     let result = tryRuleAnswer(question, context);
@@ -65,31 +87,54 @@ export async function POST(req: NextRequest) {
       const snippets = await findDocumentSnippets(body.profileId, question, knownNames);
       if (snippets.length > 0) context.documentSnippets = snippets;
       result = process.env.OPENAI_API_KEY
-        ? await answerWithOpenAI(question, context)
+        ? await answerWithOpenAI(question, context, history)
         : answerWithMock(question, context);
     }
     const { answer, model } = result;
 
     // Log the exact context packet the model (or rules engine) saw.
-    const [contextLog] = await db
-      .insert(schema.aiContextLogs)
-      .values({
-        profileId: body.profileId,
-        userId,
-        question,
-        contextJson: context,
-        redactionVersion: REDACTION_VERSION,
-        model,
-        answer,
-      })
-      .returning();
+    const persisted = await db.transaction(async (tx) => {
+      let conversation = existingConversation;
+      if (!conversation) {
+        [conversation] = await tx
+          .insert(schema.aiConversations)
+          .values({
+            profileId: body.profileId,
+            userId,
+            title: conversationTitle(question),
+          })
+          .returning();
+      } else {
+        [conversation] = await tx
+          .update(schema.aiConversations)
+          .set({ updatedAt: new Date() })
+          .where(eq(schema.aiConversations.id, conversation.id))
+          .returning();
+      }
+
+      const [contextLog] = await tx
+        .insert(schema.aiContextLogs)
+        .values({
+          conversationId: conversation.id,
+          profileId: body.profileId,
+          userId,
+          question,
+          contextJson: context,
+          redactionVersion: REDACTION_VERSION,
+          model,
+          answer,
+        })
+        .returning();
+
+      return { conversation, contextLog };
+    });
 
     // 3. Capture patient-reported data points from the user's message
     //    (symptoms, mood, sleep…) so they become part of the record.
     const captured = await extractDatapoints(body.question);
     const storedDatapoints = await storeDatapoints(
       body.profileId,
-      contextLog.id,
+      persisted.contextLog.id,
       captured
     );
 
@@ -99,6 +144,7 @@ export async function POST(req: NextRequest) {
       action: "ai_ask",
       detail: {
         model,
+        conversationId: persisted.conversation.id,
         observations: context.observations.length,
         healthRollups: context.healthRollups.length,
         healthEvents: context.healthEvents.length,
@@ -109,6 +155,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       answer,
+      conversation: {
+        id: persisted.conversation.id,
+        title: persisted.conversation.title,
+        updatedAt: persisted.conversation.updatedAt.toISOString(),
+      },
       capturedDatapoints: storedDatapoints.map((d) => ({
         kind: d.kind,
         label: d.label,

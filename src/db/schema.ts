@@ -755,10 +755,33 @@ export const recentMedications = pgTable(
   (t) => [uniqueIndex("recent_medications_profile_name_idx").on(t.profileId, t.nameText)]
 );
 
+export const aiConversations = pgTable(
+  "ai_conversations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("ai_conversations_profile_user_idx").on(t.profileId, t.userId),
+    index("ai_conversations_updated_idx").on(t.updatedAt),
+  ]
+);
+
 export const aiContextLogs = pgTable(
   "ai_context_logs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id").references(() => aiConversations.id, {
+      onDelete: "set null",
+    }),
     profileId: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
@@ -772,7 +795,10 @@ export const aiContextLogs = pgTable(
     answer: text("answer"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("ai_context_logs_profile_idx").on(t.profileId)]
+  (t) => [
+    index("ai_context_logs_profile_idx").on(t.profileId),
+    index("ai_context_logs_conversation_idx").on(t.conversationId),
+  ]
 );
 
 export const insightToneEnum = pgEnum("insight_tone", [

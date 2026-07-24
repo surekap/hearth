@@ -3,6 +3,11 @@ import { auth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/active-profile";
 import { generateInsights, getInsights } from "@/lib/ai/insights";
 import { toInsightForClient } from "@/lib/ai/insight-presenter";
+import {
+  conversationMessages,
+  getConversationTurns,
+  listConversations,
+} from "@/lib/ai/conversations";
 import { AskView } from "./ask-view";
 
 export default async function AskPage() {
@@ -10,6 +15,12 @@ export default async function AskPage() {
   if (!session?.user?.id) redirect("/login");
   const { profile } = await getActiveProfile(session.user.id);
   if (!profile) redirect("/profiles");
+
+  const conversations = await listConversations(profile.id, session.user.id);
+  const activeConversation = conversations[0] ?? null;
+  const initialMessages = activeConversation
+    ? conversationMessages(await getConversationTurns(activeConversation.id))
+    : [];
 
   // Pre-computed insights: reads are free; generation only runs when the
   // fingerprint says the underlying data changed (e.g. first visit).
@@ -24,9 +35,17 @@ export default async function AskPage() {
 
   return (
     <AskView
+      key={profile.id}
       profileId={profile.id}
       profileName={profile.displayName}
       initialInsights={insights.map(toInsightForClient)}
+      initialConversations={conversations.map((conversation) => ({
+        id: conversation.id,
+        title: conversation.title,
+        updatedAt: conversation.updatedAt.toISOString(),
+      }))}
+      initialConversationId={activeConversation?.id ?? null}
+      initialMessages={initialMessages}
     />
   );
 }

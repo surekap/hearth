@@ -29,7 +29,8 @@ Keep it under 350 words. This is correlation, not proof — say so when relevant
 
 export async function answerWithOpenAI(
   question: string,
-  context: AiContext
+  context: AiContext,
+  history: Array<{ question: string; answer: string }> = []
 ): Promise<{ answer: string; model: string }> {
   const client = new OpenAI();
   const model = reasoningModel();
@@ -38,6 +39,16 @@ export async function answerWithOpenAI(
     model,
     instructions: `${DOCTOR_PERSONA}\n\n${ANSWER_FORMAT}`,
     input: [
+      ...history.flatMap((turn) => [
+        {
+          role: "user" as const,
+          content: turn.question,
+        },
+        {
+          role: "assistant" as const,
+          content: turn.answer,
+        },
+      ]),
       {
         role: "user",
         content: [

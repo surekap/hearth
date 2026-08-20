@@ -99,6 +99,7 @@ Important overrides for a real server:
 
 - Set `NEXT_PUBLIC_APP_URL` to your public HTTPS URL
 - Set strong values for `AUTH_SECRET`, `DOCUMENT_ENCRYPTION_KEY`, and `CRON_SECRET`
+- Set `POSTGRES_BIND_ADDRESS` to the host's Tailscale IP to allow Tailnet-only database access
 - Optionally set `OPENAI_API_KEY` if you want real extraction/Q&A instead of the mock provider
 
 By default Docker Compose uses local disk storage at `/app/storage`, so no Blob/Neon

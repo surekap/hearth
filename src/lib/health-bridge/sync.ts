@@ -81,7 +81,7 @@ export async function syncHealthBridgeProfile(profileId: string): Promise<Health
               max(date)::text as max_date,
               max(synced_at)::text as max_synced_at,
               md5(coalesce(string_agg(md5(to_jsonb(day)::text), '' order by date), '')) as content_hash
-         from ${qualifiedTable}`
+         from ${qualifiedTable} day`
     );
     const fingerprint = JSON.stringify(fingerprintResult.rows[0]);
     const previous = await client.query<{ last_anchor: string | null }>(

@@ -57,6 +57,10 @@ the upload flow.
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Postgres connection string (local or Neon) |
+| `HEALTH_BRIDGE_DATABASE_HOST` | Tailnet-only PostgreSQL hostname shown to Health Bridge profiles |
+| `HEALTH_BRIDGE_DATABASE_PORT` | Tailnet PostgreSQL port (defaults to `5432`) |
+| `HEALTH_BRIDGE_DATABASE_NAME` | PostgreSQL database shown to Health Bridge profiles |
+| `HEALTH_BRIDGE_DATABASE_SSLMODE` | Client TLS mode shown in generated URLs (defaults to `verify-full`) |
 | `AUTH_SECRET` | Auth.js JWT secret (`openssl rand -base64 32`) |
 | `DOCUMENT_ENCRYPTION_KEY` | 32-byte hex master key for AES-256-GCM (`openssl rand -hex 32`) |
 | `OPENAI_API_KEY` | Enables real extraction + AI Q&A (otherwise mock provider) |

@@ -1,10 +1,17 @@
 import { redirect } from "next/navigation";
 import { eq, inArray } from "drizzle-orm";
-import { UserPlus } from "lucide-react";
+import { Database, RefreshCw, UserPlus } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/active-profile";
-import { addProfileAccount, createProfile, updateProfile } from "@/app/actions/profiles";
+import {
+  addProfileAccount,
+  createProfile,
+  provisionHealthBridgeForProfile,
+  syncHealthBridgeForProfile,
+  updateProfile,
+} from "@/app/actions/profiles";
 import { db, schema } from "@/db";
+import { getHealthBridgeConnection } from "@/lib/health-bridge/provision";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -104,6 +111,21 @@ export default async function ProfilesPage() {
     accountsByProfile.set(account.profileId, accounts);
   }
 
+  const healthBridgeConnections = new Map(
+    await Promise.all(
+      profiles.map(async (profile) => {
+        const accounts = accountsByProfile.get(profile.id) ?? [];
+        const canManage =
+          profile.userId === session.user.id ||
+          accounts.some((account) => account.userId === session.user.id && account.role === "manager");
+        return [
+          profile.id,
+          canManage ? await getHealthBridgeConnection(profile.id) : null,
+        ] as const;
+      })
+    )
+  );
+
   return (
     <div className="grid gap-6">
       <div>
@@ -119,6 +141,7 @@ export default async function ProfilesPage() {
           const canManage =
             p.userId === session.user.id ||
             accounts.some((a) => a.userId === session.user.id && a.role === "manager");
+          const healthBridge = healthBridgeConnections.get(p.id) ?? null;
 
           return (
             <Card key={p.id}>
@@ -214,6 +237,98 @@ export default async function ProfilesPage() {
                           Add login
                         </Button>
                       </form>
+                    </div>
+                  </details>
+                )}
+
+                {canManage && (
+                  <details>
+                    <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+                      Health Bridge
+                    </summary>
+                    <div className="mt-3 grid gap-3 rounded-md border p-3">
+                      {healthBridge ? (
+                        <>
+                          <div>
+                            <p className="text-sm font-medium">Private PostgreSQL connection</p>
+                            <p className="text-xs text-muted-foreground">
+                              This login is restricted to this profile&apos;s schema. Keep the password private.
+                            </p>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="grid gap-1.5">
+                              <Label>Host</Label>
+                              <Input readOnly value={healthBridge.host} />
+                            </div>
+                            <div className="grid gap-1.5">
+                              <Label>Port</Label>
+                              <Input readOnly value={String(healthBridge.port)} />
+                            </div>
+                            <div className="grid gap-1.5">
+                              <Label>Database</Label>
+                              <Input readOnly value={healthBridge.database} />
+                            </div>
+                            <div className="grid gap-1.5">
+                              <Label>Schema</Label>
+                              <Input readOnly value={healthBridge.schema} />
+                            </div>
+                            <div className="grid gap-1.5">
+                              <Label>Username</Label>
+                              <Input readOnly value={healthBridge.username} />
+                            </div>
+                            <div className="grid gap-1.5">
+                              <Label>Password</Label>
+                              <Input readOnly value={healthBridge.password} />
+                            </div>
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label>Connection URL</Label>
+                            <textarea
+                              readOnly
+                              value={healthBridge.connectionUrl}
+                              rows={3}
+                              className="border-input w-full resize-none rounded-md border bg-transparent px-3 py-2 font-mono text-xs shadow-xs"
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            TLS: {healthBridge.sslMode}
+                            {healthBridge.lastSyncedAt
+                              ? ` · Last imported ${healthBridge.lastSyncedAt.toLocaleString("en-IN")}`
+                              : " · Waiting for Health Bridge to create health_daily"}
+                          </p>
+                          {healthBridge.lastError && (
+                            <p className="text-xs text-destructive">{healthBridge.lastError}</p>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            <form action={syncHealthBridgeForProfile.bind(null, p.id)}>
+                              <Button type="submit" size="sm" variant="outline">
+                                <RefreshCw className="size-4" />
+                                Sync now
+                              </Button>
+                            </form>
+                            <form action={provisionHealthBridgeForProfile.bind(null, p.id)}>
+                              <Button type="submit" size="sm" variant="ghost">
+                                Repair connection
+                              </Button>
+                            </form>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <p className="text-sm font-medium">Connect Health Bridge for {p.displayName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Creates one private schema and a dedicated, least-privilege database login. Clicking again is safe and returns the same credential.
+                            </p>
+                          </div>
+                          <form action={provisionHealthBridgeForProfile.bind(null, p.id)}>
+                            <Button type="submit" size="sm">
+                              <Database className="size-4" />
+                              Create Health Bridge login
+                            </Button>
+                          </form>
+                        </>
+                      )}
                     </div>
                   </details>
                 )}

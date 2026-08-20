@@ -8,6 +8,8 @@ import { db, schema } from "@/db";
 import { auth } from "@/lib/auth";
 import { requireProfile, requireProfileManager } from "@/lib/api";
 import { setActiveProfileCookie } from "@/lib/active-profile";
+import { provisionHealthBridge } from "@/lib/health-bridge/provision";
+import { syncHealthBridgeProfile } from "@/lib/health-bridge/sync";
 
 async function requireUserId() {
   const session = await auth();
@@ -127,5 +129,19 @@ export async function addProfileAccount(profileId: string, formData: FormData) {
       },
     });
 
+  revalidatePath("/", "layout");
+}
+
+export async function provisionHealthBridgeForProfile(profileId: string) {
+  const userId = await requireUserId();
+  await requireProfileManager(userId, profileId);
+  await provisionHealthBridge(profileId);
+  revalidatePath("/profiles");
+}
+
+export async function syncHealthBridgeForProfile(profileId: string) {
+  const userId = await requireUserId();
+  await requireProfile(userId, profileId);
+  await syncHealthBridgeProfile(profileId);
   revalidatePath("/", "layout");
 }

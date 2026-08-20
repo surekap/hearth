@@ -31,6 +31,14 @@ export function decryptBuffer(blob: Buffer): Buffer {
   return Buffer.concat([decipher.update(data), decipher.final()]);
 }
 
+export function encryptString(plain: string): string {
+  return encryptBuffer(Buffer.from(plain, "utf8")).toString("base64");
+}
+
+export function decryptString(encrypted: string): string {
+  return decryptBuffer(Buffer.from(encrypted, "base64")).toString("utf8");
+}
+
 export function sha256Hex(data: Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }

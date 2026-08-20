@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { getAccessibleProfiles } from "@/lib/profile-access";
+import { trySyncHealthBridgeProfile } from "@/lib/health-bridge/sync";
 
 const COOKIE = "hearth_active_profile";
 
@@ -15,6 +16,7 @@ export async function getActiveProfile(userId: string) {
   if (all.length === 0) return { profile: null, profiles: all };
 
   const profile = all.find((p) => p.id === wanted) ?? all[0];
+  await trySyncHealthBridgeProfile(profile.id);
   return { profile, profiles: all };
 }
 

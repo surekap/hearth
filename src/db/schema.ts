@@ -249,6 +249,28 @@ export const profiles = pgTable(
   (t) => [index("profiles_user_idx").on(t.userId)]
 );
 
+export const healthBridgeConnections = pgTable(
+  "health_bridge_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    schemaName: text("schema_name").notNull(),
+    databaseRole: text("database_role").notNull(),
+    encryptedPassword: text("encrypted_password").notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("health_bridge_connections_profile_idx").on(t.profileId),
+    uniqueIndex("health_bridge_connections_schema_idx").on(t.schemaName),
+    uniqueIndex("health_bridge_connections_role_idx").on(t.databaseRole),
+  ]
+);
+
 export const profileAccounts = pgTable(
   "profile_accounts",
   {

@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { getMarkers, type Marker } from "./markers";
-import { getMetricIndex, type MetricIndexRow } from "./metric";
+import { getClinicalAttentionIndex, getMetricIndex, type MetricIndexRow } from "./metric";
 import { attentionState, formatMetricValue } from "./series";
 import { metricBelongsTo, SYSTEMS, type SystemMedia } from "./systems";
 
@@ -41,11 +41,14 @@ function titleize(input: string) {
 }
 
 export async function getOverviewData(profileId: string): Promise<OverviewData> {
-  const index = await getMetricIndex(profileId);
+  const [index, clinicalAbnormal] = await Promise.all([
+    getMetricIndex(profileId),
+    getClinicalAttentionIndex(profileId),
+  ]);
 
   const attention: MetricIndexRow[] = [];
   let historicalCount = 0;
-  for (const row of index) {
+  for (const row of clinicalAbnormal) {
     const state = attentionState({
       interpretation: row.interpretation,
       observedAt: new Date(row.latestDate),
@@ -71,12 +74,9 @@ export async function getOverviewData(profileId: string): Promise<OverviewData> 
       def.heroMetrics.map((n) => byName.get(n)).find((r) => r && r.latestValue != null) ??
       members.find((m) => m.latestValue != null) ??
       null;
-    const anyAttention = members.some(
-      (m) =>
-        attentionState({
-          interpretation: m.interpretation,
-          observedAt: new Date(m.latestDate),
-        }) === "attention"
+    const memberTypeIds = new Set(members.map((member) => member.typeId));
+    const anyAttention = attention.some(
+      (metric) => memberTypeIds.has(metric.typeId)
     );
     systems.push({
       id: def.id,

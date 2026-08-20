@@ -294,7 +294,7 @@ export default async function ProfilesPage() {
                             TLS: {healthBridge.sslMode}
                             {healthBridge.lastSyncedAt
                               ? ` · Last imported ${healthBridge.lastSyncedAt.toLocaleString("en-IN")}`
-                              : " · Waiting for Health Bridge to create health_daily"}
+                              : " · Waiting for Health Bridge data"}
                           </p>
                           {healthBridge.lastError && (
                             <p className="text-xs text-destructive">{healthBridge.lastError}</p>

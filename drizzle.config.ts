@@ -8,9 +8,9 @@ export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle",
   dialect: "postgresql",
-  // Health Bridge owns this legacy table. It is intentionally outside the
-  // Hearth schema and must never be treated as a rename/drop candidate.
-  tablesFilter: ["!health_daily"],
+  // Health Bridge owns these profile-schema tables. They are intentionally
+  // outside the Hearth schema and must never be rename/drop candidates.
+  tablesFilter: ["!health_daily", "!health_samples"],
   dbCredentials: {
     url: process.env.DATABASE_URL!,
   },

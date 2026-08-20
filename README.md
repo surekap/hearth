@@ -61,6 +61,7 @@ the upload flow.
 | `HEALTH_BRIDGE_DATABASE_PORT` | Tailnet PostgreSQL port (defaults to `5432`) |
 | `HEALTH_BRIDGE_DATABASE_NAME` | PostgreSQL database shown to Health Bridge profiles |
 | `HEALTH_BRIDGE_DATABASE_SSLMODE` | Client TLS mode shown in generated URLs (defaults to `verify-full`) |
+| `HEALTH_BRIDGE_TIMEZONE` | Local day boundary for raw sample aggregation (defaults to `Asia/Kolkata`) |
 | `AUTH_SECRET` | Auth.js JWT secret (`openssl rand -base64 32`) |
 | `DOCUMENT_ENCRYPTION_KEY` | 32-byte hex master key for AES-256-GCM (`openssl rand -hex 32`) |
 | `OPENAI_API_KEY` | Enables real extraction + AI Q&A (otherwise mock provider) |
@@ -167,6 +168,11 @@ Keep `DOCUMENT_ENCRYPTION_KEY` safe — encrypted documents are unreadable witho
   `/api/documents/:id/file` endpoint (which audit-logs each view).
 - **Audit trail**: uploads, views, extractions, accepts/rejects and AI questions land in
   `audit_logs`; the exact AI context packet + redaction version lands in `ai_context_logs`.
+- **Health Bridge stays summarized**: each profile connection points to its own private
+  PostgreSQL schema. Hearth accepts `health_daily`, optional `health_samples`, or both;
+  daily rows take precedence and raw samples are grouped by local day and metric. Routine
+  Apple Health data is kept out of the clinical timeline, while source counts remain on
+  rollups for transparent chart captions.
 
 ## Key directories
 

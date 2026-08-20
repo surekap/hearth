@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, ne } from "drizzle-orm";
 import { Dna, FileText, FlaskConical, Pill, Stethoscope, Upload } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/active-profile";
@@ -44,6 +44,9 @@ export default async function TimelinePage() {
       orderBy: [desc(schema.documents.uploadedAt)],
       limit: 200,
     }),
+    // Apple Health belongs in aggregated dashboards. Filtering it in SQL is
+    // important: otherwise the 1,000-row cap can hide older clinical records
+    // before the application has a chance to discard wearable rows.
     db
       .select({
         id: schema.observations.id,
@@ -66,7 +69,8 @@ export default async function TimelinePage() {
       .where(
         and(
           eq(schema.observations.profileId, profile.id),
-          eq(schema.observations.status, "confirmed")
+          eq(schema.observations.status, "confirmed"),
+          ne(schema.observations.source, "apple_health")
         )
       )
       .orderBy(desc(schema.observations.observedAt))

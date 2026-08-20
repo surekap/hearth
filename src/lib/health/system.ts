@@ -1,7 +1,12 @@
 import { desc, ilike, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { getMarkers, type Marker } from "./markers";
-import { getMetricIndex, loadMetricSeries, type MetricIndexRow } from "./metric";
+import {
+  getClinicalAttentionIndex,
+  getMetricIndex,
+  loadMetricSeries,
+  type MetricIndexRow,
+} from "./metric";
 import {
   isImplausibleMetricObservation,
   normalizeMetricRecord,
@@ -91,7 +96,10 @@ export async function getSystemData(
   const def = systemFor(systemId);
   if (!def) return null;
 
-  const index = await getMetricIndex(profileId);
+  const [index, clinicalAbnormal] = await Promise.all([
+    getMetricIndex(profileId),
+    getClinicalAttentionIndex(profileId),
+  ]);
   const members = index.filter((row) =>
     metricBelongsTo(def, { category: row.category, name: row.name })
   );
@@ -135,10 +143,14 @@ export async function getSystemData(
       }
     : null;
 
-  const anyAttention = members.some(
-    (m) =>
-      attentionState({ interpretation: m.interpretation, observedAt: new Date(m.latestDate) }) ===
-      "attention"
+  const memberTypeIds = new Set(members.map((member) => member.typeId));
+  const anyAttention = clinicalAbnormal.some(
+    (metric) =>
+      memberTypeIds.has(metric.typeId) &&
+      attentionState({
+        interpretation: metric.interpretation,
+        observedAt: new Date(metric.latestDate),
+      }) === "attention"
   );
   const tone: SystemPageData["tone"] = anyAttention ? "danger" : hero ? "success" : "neutral";
 

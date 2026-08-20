@@ -95,6 +95,69 @@ export async function getMetricIndex(profileId: string): Promise<MetricIndexRow[
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Latest clinically interpreted value per metric, excluding wearable signals.
+ * This prevents a fresh, interpretation-less wearable value from hiding a
+ * medically significant lab or manual measurement from six months ago.
+ */
+export async function getClinicalAttentionIndex(profileId: string): Promise<MetricIndexRow[]> {
+  const result = await db.execute(sql`
+    select * from (
+      select distinct on (o.observation_type_id)
+        ot.id as type_id,
+        ot.canonical_name as name,
+        ot.category as category,
+        ot.normal_unit as normal_unit,
+        coalesce(o.unit, ot.normal_unit) as unit,
+        o.value_numeric as latest_value,
+        o.value_text as latest_text,
+        o.observed_at as latest_date,
+        o.interpretation as interpretation,
+        count(*) over (partition by o.observation_type_id)::int as point_count
+      from observations o
+      join observation_types ot on ot.id = o.observation_type_id
+      where o.profile_id = ${profileId}
+        and o.status = 'confirmed'
+        and o.source <> 'apple_health'
+        and o.interpretation <> 'unknown'
+      order by o.observation_type_id, o.observed_at desc
+    ) latest
+    where interpretation in ('low', 'high', 'critical')
+  `);
+  const rows = result.rows as Array<{
+    type_id: string;
+    name: string;
+    category: string;
+    normal_unit: string | null;
+    unit: string | null;
+    latest_value: number | null;
+    latest_text: string | null;
+    latest_date: Date;
+    interpretation: Interpretation;
+    point_count: number;
+  }>;
+  return rows.map((r) => {
+    const normalized = normalizeMetricRecord({
+      metric: r.name,
+      normalUnit: r.normal_unit,
+      unit: r.unit,
+      valueNumeric: r.latest_value == null ? null : Number(r.latest_value),
+    });
+    return {
+      typeId: r.type_id,
+      name: r.name,
+      category: r.category,
+      categoryLabel: categoryLabel(r.category),
+      unit: normalized.unit,
+      latestValue: normalized.valueNumeric,
+      latestText: r.latest_text,
+      latestDate: new Date(r.latest_date).toISOString(),
+      interpretation: r.interpretation,
+      pointCount: Number(r.point_count),
+    };
+  });
+}
+
 type RawRow = {
   observedAt: Date;
   valueNumeric: number | null;

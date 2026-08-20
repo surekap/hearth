@@ -100,12 +100,42 @@ Important overrides for a real server:
 - Set `NEXT_PUBLIC_APP_URL` to your public HTTPS URL
 - Set strong values for `AUTH_SECRET`, `DOCUMENT_ENCRYPTION_KEY`, and `CRON_SECRET`
 - Set `POSTGRES_BIND_ADDRESS` to the host's Tailscale IP to allow Tailnet-only database access
+- Set `POSTGRES_SSL=on` and `POSTGRES_TLS_DIR=/var/lib/hearth/postgres-tls` after installing the Tailscale certificate renewal service below
 - Optionally set `OPENAI_API_KEY` if you want real extraction/Q&A instead of the mock provider
 
 By default Docker Compose uses local disk storage at `/app/storage`, so no Blob/Neon
 dependency is required. In the provided compose file, `/app/storage` is backed by
 `${HEARTH_STORAGE_DIR:-/mnt/storagebox/hearth/storage}` so uploads live on your
 Hetzner Storage Box mount by default.
+
+### Tailnet PostgreSQL TLS
+
+Health Bridge and other clients that require publicly trusted TLS should connect
+with the server's fully qualified Tailscale MagicDNS name. The certificate and
+private key are generated only on the server and are never committed.
+
+One-time installation on the Hetzner host:
+
+```bash
+cd /opt/hearth
+sudo ./ops/hetzner/install-postgres-tls.sh hetzner-docker.tail95d995.ts.net
+sudo sed -i '/^POSTGRES_SSL=/d; /^POSTGRES_TLS_DIR=/d' .env
+sudo sed -i '$aPOSTGRES_SSL=on\nPOSTGRES_TLS_DIR=/var/lib/hearth/postgres-tls' .env
+docker compose up -d postgres
+```
+
+The systemd timer checks daily and requests a new certificate only when the
+current certificate has less than 30 days remaining. It validates the certificate
+and key, installs them with PostgreSQL-compatible permissions, reloads PostgreSQL,
+and verifies the live TLS endpoint.
+
+```bash
+systemctl status hearth-postgres-tls.timer
+systemctl status hearth-postgres-tls.service
+openssl s_client -starttls postgres \
+  -connect 100.94.241.10:5432 \
+  -servername hetzner-docker.tail95d995.ts.net </dev/null
+```
 
 ## Deploying to Vercel
 

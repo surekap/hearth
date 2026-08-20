@@ -1,0 +1,17 @@
+[Unit]
+Description=Renew Hearth PostgreSQL Tailscale TLS certificate
+After=tailscaled.service docker.service
+Wants=tailscaled.service docker.service
+ConditionPathExists=/etc/default/hearth-postgres-tls
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/hearth-postgres-tls
+ExecStart=/usr/local/sbin/hearth-postgres-tls-renew
+User=root
+Group=root
+UMask=0077
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hearth/postgres-tls

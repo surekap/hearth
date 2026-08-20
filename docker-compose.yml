@@ -49,6 +49,14 @@ services:
 
   postgres:
     image: postgres:17-alpine
+    command:
+      - postgres
+      - -c
+      - "ssl=${POSTGRES_SSL:-off}"
+      - -c
+      - ssl_cert_file=/run/postgres-tls/server.crt
+      - -c
+      - ssl_key_file=/run/postgres-tls/server.key
     environment:
       POSTGRES_DB: "${POSTGRES_DB:-hearth}"
       POSTGRES_USER: "${POSTGRES_USER:-hearth}"
@@ -58,6 +66,7 @@ services:
     restart: unless-stopped
     volumes:
       - hearth-postgres:/var/lib/postgresql/data
+      - "${POSTGRES_TLS_DIR:-./docker/postgres-tls}:/run/postgres-tls:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hearth} -d ${POSTGRES_DB:-hearth}"]
       interval: 10s

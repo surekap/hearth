@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily renewal check for Hearth PostgreSQL TLS certificate
+
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=1d
+RandomizedDelaySec=2h
+Persistent=true
+Unit=hearth-postgres-tls.service
+
+[Install]
+WantedBy=timers.target

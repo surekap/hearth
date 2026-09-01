@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROMPT_VERSION = "v6";
+export const PROMPT_VERSION = "v7";
 
 export const diagnosticCategoryValues = [
   "body",
@@ -35,6 +35,76 @@ export const extractedDiagnosticMeasurementSchema = z.object({
   reference_high: z.number().nullable(),
   interpretation: z.enum(["low", "normal", "high", "critical", "unknown"]),
   category: z.enum(diagnosticCategoryValues),
+  page_number: z.number().int().positive().nullable(),
+  confidence: z.number().min(0).max(1),
+});
+
+/**
+ * Dedupe key for conditions, so "Type 2 Diabetes Mellitus" and
+ * "type-2 diabetes mellitus" collapse to one record per document. Lives here
+ * rather than in canonical.ts so pure extractor code can use it without
+ * pulling in a database connection.
+ */
+export function normalizeConditionName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+export const diagnosisCategoryValues = [
+  "cardiovascular",
+  "metabolic",
+  "hepatic",
+  "renal",
+  "respiratory",
+  "endocrine",
+  "musculoskeletal",
+  "neurological",
+  "gastrointestinal",
+  "hematological",
+  "immune",
+  "infectious",
+  "oncological",
+  "psychiatric",
+  "dermatological",
+  "reproductive",
+  "ophthalmic",
+  "other",
+] as const;
+
+export const diagnosisClinicalStatusValues = [
+  "active",
+  "recurrence",
+  "remission",
+  "resolved",
+  "inactive",
+  "unknown",
+] as const;
+
+export const diagnosisCertaintyValues = [
+  "confirmed",
+  "probable",
+  "suspected",
+  "ruled_out",
+  "unknown",
+] as const;
+
+/**
+ * A condition asserted by a clinician in the document. Distinct from a
+ * measurement: "Fatty liver grade II" is a diagnosis, "ALT 67 U/L" is not.
+ * `certainty` exists so hedged wording ("suspected", "rule out") is never
+ * stored as a confirmed condition.
+ */
+export const extractedDiagnosisSchema = z.object({
+  condition_name: z.string(),
+  category: z.enum(diagnosisCategoryValues),
+  clinical_status: z.enum(diagnosisClinicalStatusValues),
+  certainty: z.enum(diagnosisCertaintyValues),
+  severity: z.string().nullable(),
+  body_site: z.string().nullable(),
+  icd10_code: z.string().nullable(),
+  onset_date: z.string().nullable(),
+  recorded_date: z.string().nullable(),
+  doctor_name: z.string().nullable(),
+  note: z.string().nullable(),
   page_number: z.number().int().positive().nullable(),
   confidence: z.number().min(0).max(1),
 });
@@ -139,6 +209,7 @@ const extractionResultV3Schema = z.object({
   patient_name: z.string().nullable(),
   raw_text: z.string(),
   observations: z.array(extractedObservationSchema),
+  diagnoses: z.array(extractedDiagnosisSchema),
   reports: z.array(extractedReportSchema),
   medications: z.array(extractedMedicationSchema),
   genetic_report: extractedGeneticReportSchema.nullable(),
@@ -202,6 +273,8 @@ function upgradeLegacyExtraction(value: unknown): unknown {
   return {
     ...rest,
     observations,
+    // Extractions stored before diagnoses existed have no such key.
+    diagnoses: Array.isArray(input.diagnoses) ? input.diagnoses : [],
     reports,
     coverage: input.coverage ?? {
       pages_total: pagesTotal,
@@ -224,6 +297,7 @@ export type ExtractedReport = z.infer<typeof extractedReportSchema>;
 export type ExtractedDiagnosticMeasurement = z.infer<
   typeof extractedDiagnosticMeasurementSchema
 >;
+export type ExtractedDiagnosis = z.infer<typeof extractedDiagnosisSchema>;
 
 /** OpenAI strict structured-output JSON schema mirroring extractionResultSchema. */
 export const OPENAI_JSON_SCHEMA = {
@@ -236,6 +310,7 @@ export const OPENAI_JSON_SCHEMA = {
     "patient_name",
     "raw_text",
     "observations",
+    "diagnoses",
     "reports",
     "medications",
     "genetic_report",
@@ -309,6 +384,67 @@ export const OPENAI_JSON_SCHEMA = {
           interpretation: {
             type: "string",
             enum: ["low", "normal", "high", "critical", "unknown"],
+          },
+          page_number: { type: ["integer", "null"] },
+          confidence: { type: "number" },
+        },
+      },
+    },
+    diagnoses: {
+      type: "array",
+      description:
+        "Conditions/diagnoses asserted by a clinician. A diagnosis is a named condition " +
+        "(e.g. 'Fatty liver grade II', 'Type 2 diabetes mellitus'), NOT a measured value " +
+        "and NOT a genetic predisposition. Extract from impressions, assessments, " +
+        "problem lists and discharge summaries.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "condition_name",
+          "category",
+          "clinical_status",
+          "certainty",
+          "severity",
+          "body_site",
+          "icd10_code",
+          "onset_date",
+          "recorded_date",
+          "doctor_name",
+          "note",
+          "page_number",
+          "confidence",
+        ],
+        properties: {
+          condition_name: {
+            type: "string",
+            description: "Condition as printed, without the severity/grade qualifier if separable",
+          },
+          category: { type: "string", enum: [...diagnosisCategoryValues] },
+          clinical_status: {
+            type: "string",
+            enum: [...diagnosisClinicalStatusValues],
+            description:
+              "Use 'active' for a current problem, 'resolved' only when the document says it resolved, otherwise 'unknown'",
+          },
+          certainty: {
+            type: "string",
+            enum: [...diagnosisCertaintyValues],
+            description:
+              "Use 'suspected' for 'rule out'/'query'/differential wording and 'ruled_out' when explicitly excluded. Never upgrade hedged wording to 'confirmed'.",
+          },
+          severity: {
+            type: ["string", "null"],
+            description: "Printed grade/stage/severity, e.g. 'Grade II', 'Stage 3'",
+          },
+          body_site: { type: ["string", "null"] },
+          icd10_code: { type: ["string", "null"], description: "Only if printed in the document" },
+          onset_date: { type: ["string", "null"], description: "ISO date YYYY-MM-DD" },
+          recorded_date: { type: ["string", "null"], description: "ISO date YYYY-MM-DD" },
+          doctor_name: { type: ["string", "null"] },
+          note: {
+            type: ["string", "null"],
+            description: "Short supporting quote or qualifier from the document",
           },
           page_number: { type: ["integer", "null"] },
           confidence: { type: "number" },

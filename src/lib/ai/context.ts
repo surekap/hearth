@@ -23,6 +23,17 @@ export type AiContext = {
     referenceHigh: number | null;
     interpretation: string;
   }>;
+  // Clinician-asserted conditions. `certainty` is carried through so the model
+  // can see that a condition was hedged rather than settled.
+  diagnoses: Array<{
+    condition: string;
+    category: string;
+    severity: string | null;
+    status: string;
+    certainty: string;
+    onsetDate: string | null;
+    recordedDate: string | null;
+  }>;
   reports: Array<{
     date: string | null;
     type: string;
@@ -167,7 +178,7 @@ export async function buildAiContext(
   });
   const events = eventsDesc.reverse();
 
-  const [geneticReports, geneticRisks, pharmacogenomics] = await Promise.all([
+  const [geneticReports, geneticRisks, pharmacogenomics, diagnosisRows] = await Promise.all([
     db.query.geneticReports.findMany({
       where: eq(schema.geneticReports.profileId, profileId),
       orderBy: [asc(schema.geneticReports.reportDate)],
@@ -181,6 +192,11 @@ export async function buildAiContext(
     db.query.pharmacogenomicResults.findMany({
       where: eq(schema.pharmacogenomicResults.profileId, profileId),
       orderBy: [asc(schema.pharmacogenomicResults.createdAt)],
+      limit: 100,
+    }),
+    db.query.diagnoses.findMany({
+      where: eq(schema.diagnoses.profileId, profileId),
+      orderBy: [asc(schema.diagnoses.recordedDate)],
       limit: 100,
     }),
   ]);
@@ -252,6 +268,15 @@ export async function buildAiContext(
       referenceLow: r.referenceLow,
       referenceHigh: r.referenceHigh,
       interpretation: r.interpretation,
+    })),
+    diagnoses: diagnosisRows.map((d) => ({
+      condition: d.conditionName,
+      category: d.category,
+      severity: d.severity,
+      status: d.clinicalStatus,
+      certainty: d.certainty,
+      onsetDate: d.onsetDate,
+      recordedDate: d.recordedDate,
     })),
     reports: reports.map((r) => ({
       date: r.reportDate,

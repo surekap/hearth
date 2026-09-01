@@ -6,7 +6,6 @@ import {
   ChevronRight,
   ClipboardList,
   FileCheck2,
-  ImageIcon,
   Pill,
   Ruler,
   Stethoscope,
@@ -16,7 +15,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/mascot";
 import type { OverviewData } from "@/lib/health/overview";
 import { formatMetricNumber } from "@/lib/health/series";
-import { categoryLabel } from "@/lib/health/systems";
 import { cn } from "@/lib/utils";
 
 function fmtDate(iso: string) {
@@ -72,94 +70,39 @@ export function OverviewView({ profileName, data }: { profileName: string; data:
         </Card>
       ) : (
         <>
-          {data.recentClinicalImports.length > 0 && (
+          {data.activeConditions.length > 0 && (
             <section className="grid gap-3">
               <div>
-                <h2 className="text-lg font-semibold">Recent clinical imports</h2>
+                <h2 className="text-lg font-semibold">Conditions</h2>
                 <p className="text-sm text-muted-foreground">
-                  Every newly confirmed report batch appears here, including unfamiliar canonical measurements.
+                  Diagnoses recorded by a clinician in your confirmed documents.
                 </p>
               </div>
-              <div className="grid gap-3 lg:grid-cols-2">
-                {data.recentClinicalImports.map((batch) => (
+              <div className="flex flex-wrap gap-2">
+                {data.activeConditions.map((condition) => (
                   <Link
-                    key={batch.key}
+                    key={condition.id}
                     href={
-                      batch.labMeasurementCount > 0
-                        ? `/metrics?document=${batch.documentId}&scope=lab`
-                        : `/documents/${batch.documentId}/review`
+                      condition.documentId ? `/documents/${condition.documentId}/review` : "/documents"
                     }
+                    className="interactive-card rounded-lg border bg-card px-3 py-2"
                   >
-                    <Card className="interactive-card h-full py-4">
-                      <CardContent className="grid gap-3 px-4">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold">{batch.title}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Clinical date · {fmtDate(`${batch.date}T00:00:00.000Z`)}
-                            </p>
-                          </div>
-                          {batch.abnormalCount > 0 ? (
-                            <Badge className="bg-destructive/10 text-destructive">
-                              {batch.abnormalCount} flagged
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">Confirmed</Badge>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Ruler className="size-3.5" /> {batch.measurementCount} measurement
-                            {batch.measurementCount === 1 ? "" : "s"}
-                          </span>
-                          {batch.labMeasurementCount > 0 && (
-                            <span>{batch.labMeasurementCount} lab results</span>
-                          )}
-                          {batch.reportCount > 0 && (
-                            <span className="flex items-center gap-1">
-                              <FileCheck2 className="size-3.5" /> {batch.reportCount} report
-                              {batch.reportCount === 1 ? "" : "s"}
-                            </span>
-                          )}
-                          {batch.imageCount > 0 && (
-                            <span className="flex items-center gap-1">
-                              <ImageIcon className="size-3.5" /> {batch.imageCount} scan
-                              {batch.imageCount === 1 ? "" : "s"}
-                            </span>
-                          )}
-                        </div>
-
-                        {batch.highlights.length > 0 && (
-                          <div className="grid gap-1 rounded-lg bg-muted/35 p-2.5 text-xs">
-                            {batch.highlights.slice(0, 3).map((highlight) => (
-                              <p
-                                key={`${batch.key}-${highlight.name}`}
-                                className="flex items-center justify-between gap-3"
-                              >
-                                <span className="truncate text-muted-foreground">{highlight.name}</span>
-                                <span className="shrink-0 font-medium tabular-nums">
-                                  {typeof highlight.value === "number"
-                                    ? formatMetricNumber(highlight.value, highlight.unit)
-                                    : (highlight.value ?? "—")}
-                                  {highlight.unit ? ` ${highlight.unit}` : ""}
-                                </span>
-                              </p>
-                            ))}
-                          </div>
-                        )}
-
-                        {batch.categories.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {batch.categories.slice(0, 5).map((category) => (
-                              <Badge key={category} variant="secondary" className="text-[10px]">
-                                {categoryLabel(category)}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
+                    <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="font-medium">{condition.conditionName}</span>
+                      {condition.severity && (
+                        <span className="text-xs text-muted-foreground">{condition.severity}</span>
+                      )}
+                      {condition.certainty !== "confirmed" && (
+                        <Badge variant="outline" className="text-[10px] capitalize">
+                          {condition.certainty}
+                        </Badge>
+                      )}
+                    </span>
+                    {condition.recordedDate && (
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {fmtDate(`${condition.recordedDate}T00:00:00.000Z`)}
+                      </span>
+                    )}
                   </Link>
                 ))}
               </div>
@@ -363,6 +306,38 @@ export function OverviewView({ profileName, data }: { profileName: string; data:
                       <span className="tabular-nums text-muted-foreground">{fmtDate(m.date)}</span>
                       {m.label}
                     </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </section>
+          )}
+
+          {data.recentClinicalImports.length > 0 && (
+            <section className="grid gap-3">
+              <h2 className="text-lg font-semibold">Recent imports</h2>
+              <Card className="py-2">
+                <CardContent className="grid gap-1.5 px-4 py-2">
+                  {data.recentClinicalImports.map((batch) => (
+                    <Link
+                      key={batch.key}
+                      href={
+                        batch.labMeasurementCount > 0
+                          ? `/metrics?document=${batch.documentId}&scope=lab`
+                          : `/documents/${batch.documentId}/review`
+                      }
+                      className="flex items-center gap-2 text-sm"
+                    >
+                      <FileCheck2 className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="tabular-nums text-muted-foreground">
+                        {fmtDate(`${batch.date}T00:00:00.000Z`)}
+                      </span>
+                      <span className="truncate">{batch.title}</span>
+                      {batch.abnormalCount > 0 && (
+                        <Badge className="ml-auto shrink-0 bg-destructive/10 text-destructive">
+                          {batch.abnormalCount} flagged
+                        </Badge>
+                      )}
+                    </Link>
                   ))}
                 </CardContent>
               </Card>

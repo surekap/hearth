@@ -25,6 +25,7 @@ export async function loadProfileBundle(profileId: string) {
     geneticVariants,
     geneticRisks,
     pharmacogenomics,
+    diagnoses,
   ] = await Promise.all([
     db
       .select({
@@ -112,6 +113,10 @@ export async function loadProfileBundle(profileId: string) {
       where: eq(schema.pharmacogenomicResults.profileId, profileId),
       orderBy: [desc(schema.pharmacogenomicResults.createdAt)],
     }),
+    db.query.diagnoses.findMany({
+      where: eq(schema.diagnoses.profileId, profileId),
+      orderBy: [desc(schema.diagnoses.recordedDate)],
+    }),
   ]);
 
   // Exports only include confirmed clinical data.
@@ -164,6 +169,7 @@ export async function loadProfileBundle(profileId: string) {
     geneticVariants,
     geneticRisks,
     pharmacogenomics,
+    diagnoses,
   };
 }
 

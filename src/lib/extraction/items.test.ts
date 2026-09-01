@@ -10,6 +10,7 @@ function result(): ExtractionResult {
     patient_name: null,
     raw_text: "[Page 1] Echocardiogram",
     observations: [],
+    diagnoses: [],
     reports: [
       {
         study_name: "Echocardiogram",

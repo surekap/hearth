@@ -4,6 +4,7 @@ import type { ProfileBundle } from "./data";
  * FHIR-inspired R4 Bundle (spec §15):
  *   Profile → Patient · Lab value → Observation · Lab report → DiagnosticReport
  *   Document → DocumentReference · Medication → MedicationStatement
+ *   Diagnosis → Condition
  * "Inspired" — resources carry the essential fields, not full R4 conformance.
  */
 export function buildFhirBundle(bundle: ProfileBundle) {
@@ -152,6 +153,53 @@ export function buildFhirBundle(bundle: ProfileBundle) {
           { code: { text: "Phenotype" }, valueString: p.phenotype ?? undefined },
         ].filter((c) => c.valueString),
         note: p.recommendationSummary ? [{ text: p.recommendationSummary }] : undefined,
+      },
+    });
+  }
+
+  // Diagnoses → Condition. verificationStatus carries the extraction's certainty
+  // so a receiving system never reads a hedged finding as a settled diagnosis.
+  for (const d of bundle.diagnoses) {
+    entries.push({
+      resource: {
+        resourceType: "Condition",
+        id: `condition-${d.id}`,
+        subject: { reference: `Patient/${patientId}` },
+        clinicalStatus: {
+          coding: [
+            {
+              system: "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              code: d.clinicalStatus === "unknown" ? "active" : d.clinicalStatus,
+            },
+          ],
+        },
+        verificationStatus: {
+          coding: [
+            {
+              system: "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              code:
+                d.certainty === "confirmed"
+                  ? "confirmed"
+                  : d.certainty === "ruled_out"
+                    ? "refuted"
+                    : d.certainty === "unknown"
+                      ? "unconfirmed"
+                      : "provisional",
+            },
+          ],
+        },
+        category: [{ text: d.category }],
+        code: {
+          text: d.severity ? `${d.conditionName} (${d.severity})` : d.conditionName,
+          ...(d.icd10Code
+            ? { coding: [{ system: "http://hl7.org/fhir/sid/icd-10", code: d.icd10Code }] }
+            : {}),
+        },
+        ...(d.bodySite ? { bodySite: [{ text: d.bodySite }] } : {}),
+        ...(d.onsetDate ? { onsetDateTime: d.onsetDate } : {}),
+        ...(d.recordedDate ? { recordedDate: d.recordedDate } : {}),
+        ...(d.resolvedDate ? { abatementDateTime: d.resolvedDate } : {}),
+        ...(d.note ? { note: [{ text: d.note }] } : {}),
       },
     });
   }

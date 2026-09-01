@@ -10,6 +10,7 @@ function chunk(page: number, finding: string): ExtractionResult {
     patient_name: null,
     raw_text: `[Page ${page}] ${finding}`,
     observations: [],
+    diagnoses: [],
     reports: [
       {
         study_name: "2D Echocardiogram Report",

@@ -28,6 +28,7 @@ export async function extractWithMock(input: {
       patient_name: null,
       raw_text: `[MOCK EXTRACTION - set OPENAI_API_KEY for real extraction]\n${input.filename}\nThis looks like a genetic report. The mock provider does not invent genetic variants, risks, pharmacogenomics, or lab observations.`,
       observations: [],
+      diagnoses: [],
       reports: [],
       medications: [],
       genetic_report: {
@@ -115,6 +116,7 @@ export async function extractWithMock(input: {
         confidence: 0.95,
       };
     }),
+    diagnoses: [],
     reports: [],
     medications: [],
     genetic_report: null,

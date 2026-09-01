@@ -12,6 +12,7 @@ import {
   normalizeObservationName,
   type ObservationTypeRow,
 } from "@/lib/extraction/canonical";
+import { normalizeConditionName } from "@/lib/extraction/schemas";
 import { normalizeMetricRecord } from "@/lib/health/normalization";
 import { derivePrescriptionCourse } from "@/lib/medication-course";
 import { recordMedicationEvent, upsertMedicationMaster } from "@/lib/medications";
@@ -21,6 +22,23 @@ const bodySchema = z.object({
   rejectItemIds: z.array(z.string().uuid()).default([]),
   createMissingObservationTypes: z.boolean().default(false),
 });
+
+// Item types the write loop below can turn into confirmed records. Keep in sync
+// with the branches in POST — `procedure` is deliberately absent because it has
+// no destination table yet.
+const ACCEPTABLE_ITEM_TYPES = new Set<
+  (typeof schema.extractedItemTypeEnum.enumValues)[number]
+>([
+  "lab_observation",
+  "diagnostic_measurement",
+  "diagnosis",
+  "report_summary",
+  "medication",
+  "genetic_variant",
+  "genetic_risk",
+  "genetic_trait",
+  "pharmacogenomic_result",
+]);
 
 type LabRaw = {
   test_name?: string;
@@ -41,6 +59,22 @@ type LabRaw = {
   modality?: string | null;
   page_start?: number | null;
   page_end?: number | null;
+};
+
+type DiagnosisRaw = {
+  condition_name?: string;
+  category?: (typeof schema.diagnosisCategoryEnum.enumValues)[number];
+  clinical_status?: (typeof schema.diagnosisClinicalStatusEnum.enumValues)[number];
+  certainty?: (typeof schema.diagnosisCertaintyEnum.enumValues)[number];
+  severity?: string | null;
+  body_site?: string | null;
+  icd10_code?: string | null;
+  onset_date?: string | null;
+  recorded_date?: string | null;
+  doctor_name?: string | null;
+  note?: string | null;
+  page_number?: number | null;
+  confidence?: number;
 };
 
 const blockedDynamicTestNames = new Set([
@@ -297,6 +331,30 @@ export async function POST(
         })
       : [];
 
+    // Every accepted item type must have a branch in the write loop below. Without
+    // this guard an unhandled type is marked `accepted` and written nowhere, so the
+    // user sees a success and silently loses the data. Validated before any writes
+    // so a bad batch fails whole rather than half-applied.
+    const unhandled = [
+      ...new Set(
+        items
+          .filter(
+            (item) =>
+              body.acceptItemIds.includes(item.id) &&
+              item.status !== "accepted" &&
+              !ACCEPTABLE_ITEM_TYPES.has(item.itemType)
+          )
+          .map((item) => item.itemType)
+      ),
+    ];
+    if (unhandled.length > 0) {
+      throw new ApiError(
+        422,
+        `Cannot accept unsupported item type(s): ${unhandled.join(", ")}. ` +
+          `These items have no confirmed-record destination yet; reject them or leave them as drafts.`
+      );
+    }
+
     const canonicalMap = await buildCanonicalMap();
     const accepted: string[] = [];
     const unmapped: string[] = [];
@@ -412,6 +470,58 @@ export async function POST(
                 ? { pageNumber: raw.page_number, extractionItemId: item.id }
                 : { extractionItemId: item.id },
         });
+      } else if (item.itemType === "diagnosis") {
+        const raw = item.rawJson as DiagnosisRaw;
+        const conditionName = raw.condition_name?.trim();
+        const normalizedName = conditionName ? normalizeConditionName(conditionName) : "";
+        if (conditionName && normalizedName) {
+          await db
+            .insert(schema.diagnoses)
+            .values({
+              profileId: job.profileId,
+              documentId: doc.id,
+              conditionName,
+              normalizedName,
+              category: raw.category ?? "other",
+              clinicalStatus: raw.clinical_status ?? "unknown",
+              certainty: raw.certainty ?? "unknown",
+              severity: raw.severity ?? null,
+              bodySite: raw.body_site ?? null,
+              icd10Code: raw.icd10_code ?? null,
+              onsetDate: raw.onset_date ?? null,
+              recordedDate: raw.recorded_date ?? doc.documentDate ?? null,
+              resolvedDate: raw.clinical_status === "resolved" ? raw.recorded_date ?? null : null,
+              doctorName: raw.doctor_name ?? null,
+              note: raw.note ?? null,
+              pageNumber: raw.page_number ?? null,
+              confidence: raw.confidence ?? item.confidence ?? null,
+            })
+            // Re-accepting the same document updates the existing condition
+            // instead of stacking duplicates.
+            .onConflictDoUpdate({
+              target: [
+                schema.diagnoses.profileId,
+                schema.diagnoses.documentId,
+                schema.diagnoses.normalizedName,
+              ],
+              set: {
+                conditionName,
+                category: raw.category ?? "other",
+                clinicalStatus: raw.clinical_status ?? "unknown",
+                certainty: raw.certainty ?? "unknown",
+                severity: raw.severity ?? null,
+                bodySite: raw.body_site ?? null,
+                icd10Code: raw.icd10_code ?? null,
+                onsetDate: raw.onset_date ?? null,
+                recordedDate: raw.recorded_date ?? doc.documentDate ?? null,
+                doctorName: raw.doctor_name ?? null,
+                note: raw.note ?? null,
+                pageNumber: raw.page_number ?? null,
+                confidence: raw.confidence ?? item.confidence ?? null,
+                updatedAt: now,
+              },
+            });
+        }
       } else if (item.itemType === "report_summary") {
         const raw = item.rawJson as Record<string, unknown>;
         await db.insert(schema.clinicalReports).values({

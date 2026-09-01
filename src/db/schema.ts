@@ -196,6 +196,46 @@ export const clinicalReportTypeEnum = pgEnum("clinical_report_type", [
   "other",
 ]);
 
+export const diagnosisCategoryEnum = pgEnum("diagnosis_category", [
+  "cardiovascular",
+  "metabolic",
+  "hepatic",
+  "renal",
+  "respiratory",
+  "endocrine",
+  "musculoskeletal",
+  "neurological",
+  "gastrointestinal",
+  "hematological",
+  "immune",
+  "infectious",
+  "oncological",
+  "psychiatric",
+  "dermatological",
+  "reproductive",
+  "ophthalmic",
+  "other",
+]);
+
+// `active` vs `resolved` drives what counts as a current condition. `suspected`
+// covers "rule out" / differential wording that must never read as confirmed.
+export const diagnosisClinicalStatusEnum = pgEnum("diagnosis_clinical_status", [
+  "active",
+  "recurrence",
+  "remission",
+  "resolved",
+  "inactive",
+  "unknown",
+]);
+
+export const diagnosisCertaintyEnum = pgEnum("diagnosis_certainty", [
+  "confirmed",
+  "probable",
+  "suspected",
+  "ruled_out",
+  "unknown",
+]);
+
 export const geneticTestKindEnum = pgEnum("genetic_test_kind", [
   "predisposition",
   "pharmacogenomics",
@@ -587,6 +627,58 @@ export const clinicalReports = pgTable(
   (t) => [
     index("clinical_reports_profile_idx").on(t.profileId),
     index("clinical_reports_document_idx").on(t.documentId),
+  ]
+);
+
+/**
+ * Diagnoses/conditions stated in a clinical document (FHIR `Condition`).
+ * Kept out of `observations` on purpose: a diagnosis is a clinician's assertion,
+ * not a measurement, and must never be charted as a time-series value or
+ * confused with a genetic predisposition.
+ */
+export const diagnoses = pgTable(
+  "diagnoses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id").references(() => documents.id, {
+      onDelete: "cascade",
+    }),
+    clinicalReportId: uuid("clinical_report_id").references(() => clinicalReports.id, {
+      onDelete: "set null",
+    }),
+    conditionName: text("condition_name").notNull(),
+    normalizedName: text("normalized_name").notNull(),
+    category: diagnosisCategoryEnum("category").notNull().default("other"),
+    clinicalStatus: diagnosisClinicalStatusEnum("clinical_status").notNull().default("unknown"),
+    certainty: diagnosisCertaintyEnum("certainty").notNull().default("unknown"),
+    severity: text("severity"),
+    bodySite: text("body_site"),
+    icd10Code: text("icd10_code"),
+    onsetDate: date("onset_date"),
+    recordedDate: date("recorded_date"),
+    resolvedDate: date("resolved_date"),
+    doctorName: text("doctor_name"),
+    note: text("note"),
+    pageNumber: integer("page_number"),
+    confidence: doublePrecision("confidence"),
+    metadataJson: jsonb("metadata_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("diagnoses_profile_idx").on(t.profileId),
+    index("diagnoses_document_idx").on(t.documentId),
+    index("diagnoses_profile_status_idx").on(t.profileId, t.clinicalStatus),
+    // One row per condition per source document; re-accepting a document replaces
+    // rather than duplicates.
+    uniqueIndex("diagnoses_profile_document_name_key").on(
+      t.profileId,
+      t.documentId,
+      t.normalizedName
+    ),
   ]
 );
 

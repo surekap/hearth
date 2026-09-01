@@ -25,6 +25,23 @@ export function extractionItemsFromResult({
     });
   }
 
+  for (const diagnosis of result.diagnoses ?? []) {
+    // A ruled-out condition is a useful thing to have read, but confirming it as
+    // a record would assert the opposite of what the document says.
+    if (diagnosis.certainty === "ruled_out") continue;
+    items.push({
+      extractionJobId: jobId,
+      profileId,
+      itemType: "diagnosis",
+      status: "draft",
+      rawJson: {
+        ...diagnosis,
+        recorded_date: diagnosis.recorded_date ?? result.report_date,
+      },
+      confidence: diagnosis.confidence,
+    });
+  }
+
   for (const [reportIndex, report] of result.reports.entries()) {
     const reportDate = report.report_date ?? result.report_date;
     items.push({

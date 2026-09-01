@@ -6,6 +6,8 @@ import {
   OPENAI_JSON_SCHEMA,
   type ExtractionResult,
   type ExtractedReport,
+  type ExtractedDiagnosis,
+  normalizeConditionName,
   PROMPT_VERSION,
 } from "./schemas";
 
@@ -43,6 +45,9 @@ Rules:
 - Every report needs study_name, report_type, page_start, and page_end. Use the absolute page numbers supplied in the request.
 - For imaging, preserve the complete findings and impression, including printed image/page comments.
 - For DEXA/body-composition reports, transcribe every populated table cell that represents a clinical measurement. This includes total and regional BMD/T-score/Z-score; total mass, tissue mass, fat-free mass, lean mass, fat mass and BMC; tissue and region fat percentages; android/gynoid values and ratio; VAT/SAT volume, mass and area; right/left balance; and measured age/height/weight when printed. Preserve the source page and exact unit. Do not omit values because they repeat elsewhere; chunk merging will deduplicate exact duplicates.
+- Put every clinician-asserted condition in diagnoses: impressions, assessments, problem lists, "known case of" history, and discharge diagnoses. A diagnosis is a named condition such as "Fatty liver grade II" or "Type 2 diabetes mellitus"; a measured value such as "ALT 67 U/L" is never a diagnosis. Record the condition in condition_name and any printed grade/stage separately in severity.
+- diagnoses.certainty must reflect the printed wording: use suspected for "rule out", "query", "likely" or differential lists, ruled_out when explicitly excluded, and confirmed only for an unhedged assertion. Never upgrade hedged wording. A finding that only appears inside a report impression still belongs in diagnoses as well as in that report's impression.
+- Never derive a diagnosis from a genetic predisposition, a family history mention, or an out-of-range lab value on its own.
 - For prescriptions fill medications.
 - Anything ambiguous goes into uncertain_items; document-level or page-quality problems go into warnings.
 - coverage must honestly report the supplied document page total, pages processed, sections detected/extracted, and pages that could not be represented.
@@ -55,6 +60,21 @@ type Chunk = {
   pageEnd: number;
   pagesTotal: number;
 };
+
+// Lower rank == more cautious, so merging never inflates certainty. "unknown" is
+// deliberately absent: it means "the document did not say", which must neither
+// override an explicit reading nor be preferred over one.
+const DIAGNOSIS_CERTAINTY_ORDER = ["ruled_out", "suspected", "probable", "confirmed"];
+
+/** Returns the more cautious of two readings, ignoring uninformative "unknown". */
+function moreCautiousCertainty(
+  a: ExtractedDiagnosis["certainty"],
+  b: ExtractedDiagnosis["certainty"]
+): ExtractedDiagnosis["certainty"] {
+  if (a === "unknown") return b;
+  if (b === "unknown") return a;
+  return DIAGNOSIS_CERTAINTY_ORDER.indexOf(a) <= DIAGNOSIS_CERTAINTY_ORDER.indexOf(b) ? a : b;
+}
 
 function uniqueBy<T>(values: T[], key: (value: T) => string): T[] {
   const seen = new Set<string>();
@@ -213,6 +233,44 @@ export function reconcileAmbiguousNumericDates(result: ExtractionResult): Extrac
   return reconciled;
 }
 
+/**
+ * The same condition often appears on several pages (problem list, impression,
+ * discharge summary), so chunked extraction yields near-duplicates. Collapse by
+ * condition name and keep the most clinically specific version rather than the
+ * first one seen — a later chunk may carry the grade, ICD code or onset date.
+ */
+export function mergeExtractedDiagnoses(diagnoses: ExtractedDiagnosis[]): ExtractedDiagnosis[] {
+  const merged: ExtractedDiagnosis[] = [];
+  for (const diagnosis of diagnoses) {
+    const key = normalizeConditionName(diagnosis.condition_name);
+    if (!key) continue;
+    const existing = merged.find(
+      (candidate) => normalizeConditionName(candidate.condition_name) === key
+    );
+    if (!existing) {
+      merged.push(structuredClone(diagnosis));
+      continue;
+    }
+
+    // A hedged mention must never be overwritten by a confident-looking duplicate
+    // from another page; keep the most cautious reading.
+    existing.certainty = moreCautiousCertainty(existing.certainty, diagnosis.certainty);
+    if (existing.clinical_status === "unknown" && diagnosis.clinical_status !== "unknown") {
+      existing.clinical_status = diagnosis.clinical_status;
+    }
+    existing.severity ??= diagnosis.severity;
+    existing.body_site ??= diagnosis.body_site;
+    existing.icd10_code ??= diagnosis.icd10_code;
+    existing.onset_date ??= diagnosis.onset_date;
+    existing.recorded_date ??= diagnosis.recorded_date;
+    existing.doctor_name ??= diagnosis.doctor_name;
+    existing.note ??= diagnosis.note;
+    existing.page_number ??= diagnosis.page_number;
+    existing.confidence = Math.max(existing.confidence, diagnosis.confidence);
+  }
+  return merged;
+}
+
 export function mergeExtractedReports(reports: ExtractedReport[]): ExtractedReport[] {
   const merged: ExtractedReport[] = [];
   const dateConflicts = new WeakSet<ExtractedReport>();
@@ -352,6 +410,7 @@ export function mergeExtractionResults(
       .map((result, index) => `[Extraction chunk ${index + 1}]\n${result.raw_text}`)
       .join("\n\n"),
     observations,
+    diagnoses: mergeExtractedDiagnoses(results.flatMap((result) => result.diagnoses ?? [])),
     reports,
     medications: uniqueBy(results.flatMap((result) => result.medications), JSON.stringify),
     genetic_report: results.find((result) => result.genetic_report)?.genetic_report ?? null,

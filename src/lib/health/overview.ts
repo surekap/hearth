@@ -27,7 +27,18 @@ export type OverviewCareArea = {
   latestDate: string | null;
 };
 
+export type OverviewCondition = {
+  id: string;
+  conditionName: string;
+  category: string;
+  certainty: (typeof schema.diagnosisCertaintyEnum.enumValues)[number];
+  severity: string | null;
+  recordedDate: string | null;
+  documentId: string | null;
+};
+
 export type OverviewData = {
+  activeConditions: OverviewCondition[];
   attention: MetricIndexRow[];
   historicalCount: number;
   systems: OverviewSystemCard[];
@@ -204,7 +215,29 @@ export async function getOverviewData(profileId: string): Promise<OverviewData> 
     images: importImages,
   });
 
+  // Conditions a clinician actually asserted. Documents rarely state a status
+  // explicitly, so "unknown" counts as current — only an explicit resolved /
+  // remission / inactive reading removes a condition from this list. Ruled-out
+  // items never become records at all (see extraction/items.ts).
+  const conditionRows = await db.query.diagnoses.findMany({
+    where: and(
+      eq(schema.diagnoses.profileId, profileId),
+      inArray(schema.diagnoses.clinicalStatus, ["active", "recurrence", "unknown"])
+    ),
+    orderBy: [desc(schema.diagnoses.recordedDate)],
+    limit: 12,
+  });
+
   return {
+    activeConditions: conditionRows.map((row) => ({
+      id: row.id,
+      conditionName: row.conditionName,
+      category: row.category,
+      certainty: row.certainty,
+      severity: row.severity,
+      recordedDate: row.recordedDate,
+      documentId: row.documentId,
+    })),
     attention: attention.slice(0, 8),
     historicalCount,
     systems,

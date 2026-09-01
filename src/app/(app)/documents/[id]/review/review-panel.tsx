@@ -803,6 +803,13 @@ export function ReviewPanel({
                     title = `${raw.condition_name ?? "Genetic risk"} — ${raw.assessment ?? raw.risk_level ?? ""}`;
                   } else if (item.itemType === "pharmacogenomic_result") {
                     title = `${raw.drug_name ?? "Medication"} — ${raw.implication ?? ""}`;
+                  } else if (item.itemType === "diagnosis") {
+                    title = [raw.condition_name ?? "Condition", raw.severity]
+                      .filter(Boolean)
+                      .join(" · ");
+                    if (raw.certainty && raw.certainty !== "confirmed") {
+                      title += ` (${String(raw.certainty).replace("_", " ")})`;
+                    }
                   } else {
                     title = `${raw.modality ?? "Report"} — ${raw.impression ?? raw.summary ?? ""}`;
                   }

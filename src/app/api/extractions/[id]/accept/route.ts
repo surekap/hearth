@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { scheduleInsightRefresh } from "@/lib/ai/insights";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { requireUser, requireProfile, handleApiError, ApiError, logAudit } from "@/lib/api";
@@ -319,6 +319,22 @@ export async function POST(
       where: eq(schema.documents.id, job.documentId),
     });
     if (!doc) throw new ApiError(404, "Document not found");
+
+    // Re-extracting a document leaves the previous job's un-actioned drafts behind.
+    // They are invisible in the UI (review renders the latest job only) but were
+    // still acceptable by id, which would write stale extraction output into
+    // confirmed records. Only the current job for a document may be accepted.
+    const latestJob = await db.query.extractionJobs.findFirst({
+      where: eq(schema.extractionJobs.documentId, doc.id),
+      orderBy: [desc(schema.extractionJobs.createdAt)],
+      columns: { id: true },
+    });
+    if (latestJob && latestJob.id !== job.id) {
+      throw new ApiError(
+        409,
+        "This extraction has been superseded by a newer one for the same document. Review the current extraction instead."
+      );
+    }
 
     const body = bodySchema.parse(await req.json());
     const allIds = [...body.acceptItemIds, ...body.rejectItemIds];
@@ -700,6 +716,31 @@ export async function POST(
         .update(schema.clinicalImages)
         .set({ status: "accepted" })
         .where(eq(schema.clinicalImages.extractionJobId, job.id));
+
+      // Confirming this extraction settles the document, so any earlier job's
+      // un-actioned drafts are obsolete. Left as `draft` they accumulate
+      // indefinitely and misreport how much still needs review.
+      const supersededJobs = await db.query.extractionJobs.findMany({
+        where: and(
+          eq(schema.extractionJobs.documentId, doc.id),
+          ne(schema.extractionJobs.id, job.id)
+        ),
+        columns: { id: true },
+      });
+      if (supersededJobs.length > 0) {
+        await db
+          .update(schema.extractedItems)
+          .set({ status: "rejected" })
+          .where(
+            and(
+              inArray(
+                schema.extractedItems.extractionJobId,
+                supersededJobs.map((row) => row.id)
+              ),
+              eq(schema.extractedItems.status, "draft")
+            )
+          );
+      }
     }
 
     // Job + document status roll-up

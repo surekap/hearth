@@ -13,9 +13,48 @@ import {
   classifyWarnings,
   partitionWarnings,
   warningKey,
+  rowsNamedInWarning,
   type WarningKind,
 } from "@/lib/extraction/warning-classify";
 import { cn } from "@/lib/utils";
+
+/**
+ * An ambiguity warning names a value the extractor had to guess at. Re-reading
+ * cannot settle it, so the remediation is to jump to that row and correct it;
+ * the row's own `userCorrected` flag is what marks the warning answered.
+ */
+function AmbiguityRows({
+  text,
+  rows,
+  onReview,
+}: {
+  text: string;
+  rows: { id: string; name: string | null; corrected: boolean }[];
+  onReview: (rowId: string) => void;
+}) {
+  const named = rowsNamedInWarning(text, rows);
+  if (named.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        No extracted row matches this note; check the source page before confirming.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {named.map((row) => (
+        <Button
+          key={row.id}
+          size="sm"
+          variant={row.corrected ? "ghost" : "outline"}
+          onClick={() => onReview(row.id)}
+        >
+          {row.corrected ? `${row.name} corrected` : `Check ${row.name}`}
+        </Button>
+      ))}
+    </div>
+  );
+}
 
 const WARNING_LABELS: Record<WarningKind, string> = {
   missing_value: "missing value",
@@ -124,6 +163,7 @@ export function ReviewPanel({
   }>({ typeId: "", value: "", unit: "" });
   const [savingWarning, setSavingWarning] = useState(false);
   const [locallyResolved, setLocallyResolved] = useState<string[]>([]);
+  const [reextracting, setReextracting] = useState<string | null>(null);
 
   const draftItems = items.filter((i) => i.status === "draft");
   const labItems = draftItems.filter((i) => i.itemType === "lab_observation");
@@ -273,6 +313,40 @@ export function ReviewPanel({
   );
   const resolvedKeys = new Set([...resolvedWarningKeys, ...locallyResolved]);
 
+  // Rows an ambiguity warning can point at. An ambiguity cannot be re-read away
+  // — the document is genuinely unclear — so the remediation is the user
+  // correcting the row, and `userCorrected` is what marks it settled.
+  const namedRowCandidates = observationItems.map((item) => ({
+    id: item.id,
+    name: (item.rawJson.canonical_name ?? item.rawJson.test_name ?? null) as string | null,
+    corrected: item.userCorrected,
+  }));
+
+  async function reextractPage(warningText: string, page: number) {
+    const key = warningKey(warningText);
+    setReextracting(key);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/extractions/${job?.id}/reextract-page`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageStart: page, pageEnd: page }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error ?? "Could not re-read that page.");
+      setMessage(
+        body.added > 0
+          ? `Re-read page ${page}: ${body.added} new value${body.added === 1 ? "" : "s"} added below for review.`
+          : `Re-read page ${page}: nothing new found beyond what is already extracted.`
+      );
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not re-read that page.");
+    } finally {
+      setReextracting(null);
+    }
+  }
+
   async function submitMissingValue(warningText: string) {
     const key = warningKey(warningText);
     const numeric = Number.parseFloat(warningDraft.value);
@@ -409,7 +483,7 @@ export function ReviewPanel({
                         View page {entry.page}
                       </a>
                     )}
-                    {entry.actionable && !resolved && !formOpen && (
+                    {entry.kind === "missing_value" && !resolved && !formOpen && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -422,7 +496,42 @@ export function ReviewPanel({
                         Add the value
                       </Button>
                     )}
+
+                    {entry.kind === "partial_table" && entry.page !== null && job?.id && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        disabled={reextracting !== null}
+                        onClick={() => reextractPage(entry.text, entry.page as number)}
+                      >
+                        {reextracting === key ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          `Re-read page ${entry.page}`
+                        )}
+                      </Button>
+                    )}
                   </div>
+
+                  {entry.kind === "partial_table" && entry.page === null && (
+                    <p className="text-xs text-muted-foreground">
+                      No page is named, so this one needs a look at the source document.
+                    </p>
+                  )}
+
+                  {entry.kind === "ambiguity" && (
+                    <AmbiguityRows
+                      text={entry.text}
+                      rows={namedRowCandidates}
+                      onReview={(rowId) => {
+                        setEditing(rowId);
+                        document
+                          .getElementById(`item-${rowId}`)
+                          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      }}
+                    />
+                  )}
 
                   {formOpen && (
                     <div className="grid gap-2 rounded-md border bg-background p-2.5 sm:grid-cols-[2fr_1fr_1fr_auto]">
@@ -804,10 +913,13 @@ export function ReviewPanel({
                   return (
                     <div
                       key={item.id}
+                      // Anchor for the "Check <test>" action on ambiguity warnings.
+                      id={`item-${item.id}`}
                       className={cn(
                         "rounded-lg border p-2.5 transition-colors",
                         decision === "reject" && "opacity-45",
-                        !typeId && "border-amber-300 bg-amber-50/50"
+                        !typeId && "border-amber-300 bg-amber-50/50",
+                        isEditing && "ring-2 ring-primary/40"
                       )}
                     >
                       <div className="flex flex-wrap items-center gap-2">

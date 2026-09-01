@@ -5,6 +5,7 @@ import {
   partitionWarnings,
   classifyWarnings,
   warningKey,
+  rowsNamedInWarning,
 } from "./warning-classify";
 
 // Every string below is a verbatim warning or uncertain item taken from the
@@ -93,6 +94,40 @@ describe("warningKey", () => {
   it("distinguishes different warnings", () => {
     const keys = new Set([...MISSING_VALUE, ...NOTES].map(warningKey));
     expect(keys.size).toBe(MISSING_VALUE.length + NOTES.length);
+  });
+});
+
+describe("rowsNamedInWarning", () => {
+  const rows = [
+    { id: "1", name: "Total Thyroxine (T4)" },
+    { id: "2", name: "Haemoglobin" },
+    { id: "3", name: "T3" },
+    { id: "4", name: null },
+  ];
+
+  it("finds the row an ambiguity warning names", () => {
+    const hit = rowsNamedInWarning(
+      "The Total Thyroxine (T4) unit is ambiguous as noted in warnings.",
+      rows
+    );
+    expect(hit.map((r) => r.id)).toEqual(["1"]);
+  });
+
+  it("returns nothing when no row is named", () => {
+    expect(rowsNamedInWarning("The ECG report is marked 'Unconfirmed'.", rows)).toHaveLength(0);
+  });
+
+  it("skips very short names that would match inside other words", () => {
+    // "T3" must not match the "t3" inside an unrelated token.
+    expect(rowsNamedInWarning("Value xt3y is unclear.", rows).map((r) => r.id)).not.toContain("3");
+  });
+
+  it("does not match a name embedded in a longer word", () => {
+    expect(rowsNamedInWarning("The salt content is unclear.", [{ id: "a", name: "alt" }])).toHaveLength(0);
+  });
+
+  it("tolerates rows with no name", () => {
+    expect(() => rowsNamedInWarning("anything", rows)).not.toThrow();
   });
 });
 

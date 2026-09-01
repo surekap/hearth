@@ -3,6 +3,52 @@ import type { ExtractionResult } from "./schemas";
 
 type ExtractedItemInsert = typeof schema.extractedItems.$inferInsert;
 
+/**
+ * Identity of a measurement for dedupe purposes: what it is, what it reads, and
+ * where it came from. Deliberately excludes confidence and free text, which vary
+ * between passes over the same printed value.
+ */
+function measurementKey(raw: Record<string, unknown>): string {
+  const name = (raw.canonical_name ?? raw.test_name ?? raw.name ?? "") as string;
+  const unit = (raw.unit ?? "") as string;
+  return JSON.stringify([
+    String(name).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(),
+    raw.value ?? null,
+    raw.value_text ?? null,
+    String(unit).toLowerCase().replace(/\s+/g, ""),
+    raw.page_number ?? null,
+  ]);
+}
+
+/**
+ * Filters a targeted re-read down to rows the job does not already have.
+ *
+ * A re-read of a page necessarily returns everything printed on it, including
+ * what the first pass captured. Without this the review screen would fill with
+ * duplicates of values the user already accepted.
+ */
+export function newMeasurementsOnly<T extends { itemType: string; rawJson: unknown }>(
+  candidates: T[],
+  existing: { itemType: string; rawJson: unknown }[]
+): T[] {
+  const seen = new Set(
+    existing
+      .filter((item) => MEASUREMENT_TYPES.has(item.itemType))
+      .map((item) => measurementKey(item.rawJson as Record<string, unknown>))
+  );
+  const out: T[] = [];
+  for (const candidate of candidates) {
+    if (!MEASUREMENT_TYPES.has(candidate.itemType)) continue;
+    const key = measurementKey(candidate.rawJson as Record<string, unknown>);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(candidate);
+  }
+  return out;
+}
+
+const MEASUREMENT_TYPES = new Set(["lab_observation", "diagnostic_measurement"]);
+
 export function extractionItemsFromResult({
   result,
   jobId,

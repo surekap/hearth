@@ -486,6 +486,85 @@ export function mergeExtractionResults(
   };
 }
 
+/**
+ * Builds a single chunk covering one absolute page range, labelled with the same
+ * provenance markers as a normal split so extracted page numbers stay absolute.
+ * Used for a targeted re-read when the first pass under-extracted a table.
+ */
+export async function buildPageRangeChunk(
+  buffer: Buffer,
+  pageStart: number,
+  pageEnd: number
+): Promise<Chunk> {
+  const source = await PDFDocument.load(buffer);
+  const pagesTotal = source.getPageCount();
+  const from = Math.max(1, Math.min(pageStart, pagesTotal));
+  const to = Math.max(from, Math.min(pageEnd, pagesTotal));
+
+  const output = await PDFDocument.create();
+  const provenanceFont = await output.embedFont(StandardFonts.Helvetica);
+  const copied = await output.copyPages(
+    source,
+    Array.from({ length: to - from + 1 }, (_, index) => from - 1 + index)
+  );
+  for (const [index, page] of copied.entries()) {
+    page.drawText(`HEARTH SOURCE PAGE ${from + index} OF ${pagesTotal}`, {
+      x: 8,
+      y: Math.max(4, page.getHeight() - 9),
+      size: 6,
+      font: provenanceFont,
+      color: rgb(0.45, 0.45, 0.45),
+      opacity: 0.8,
+    });
+    output.addPage(page);
+  }
+  return {
+    buffer: Buffer.from(await output.save()),
+    pageStart: from,
+    pageEnd: to,
+    pagesTotal,
+  };
+}
+
+const EXHAUSTIVE_TABLE_FOCUS =
+  "This is a targeted re-read: an earlier pass under-extracted this page. " +
+  "Transcribe EVERY populated cell of every table here as a separate measurement, " +
+  "including predicted, LLN, percent-predicted, percent-change and other derived " +
+  "columns. Do not omit a value because it repeats or looks secondary. Return only " +
+  "what is printed on these pages.";
+
+/** Re-reads a page range with an exhaustive-table instruction. */
+export async function extractPagesWithOpenAI(input: {
+  buffer: Buffer;
+  mimeType: string;
+  filename: string;
+  documentTypeHint: string;
+  pageStart: number;
+  pageEnd: number;
+  signal?: AbortSignal;
+}): Promise<ProviderOutput> {
+  if (input.mimeType !== "application/pdf") {
+    throw new Error("Targeted page re-extraction supports PDF documents only");
+  }
+  const client = new OpenAI();
+  const model = extractionModel();
+  const chunk = await buildPageRangeChunk(input.buffer, input.pageStart, input.pageEnd);
+  const output = await extractChunkWithOpenAI({
+    client,
+    model,
+    chunk,
+    mimeType: input.mimeType,
+    filename: input.filename,
+    documentTypeHint: input.documentTypeHint,
+    signal: input.signal,
+    focus: EXHAUSTIVE_TABLE_FOCUS,
+  });
+  return {
+    ...output,
+    engine: `${output.engine}:page-${chunk.pageStart}-${chunk.pageEnd}`,
+  };
+}
+
 async function splitPdf(buffer: Buffer): Promise<Chunk[]> {
   const source = await PDFDocument.load(buffer);
   const pagesTotal = source.getPageCount();
@@ -547,6 +626,7 @@ async function extractChunkWithOpenAI({
   filename,
   documentTypeHint,
   signal,
+  focus,
 }: {
   client: OpenAI;
   model: string;
@@ -555,6 +635,8 @@ async function extractChunkWithOpenAI({
   filename: string;
   documentTypeHint: string;
   signal?: AbortSignal;
+  /** Extra instruction for a targeted re-read of pages the first pass under-extracted. */
+  focus?: string;
 }): Promise<ProviderOutput> {
   const filePart =
     mimeType === "application/pdf"
@@ -585,7 +667,8 @@ async function extractChunkWithOpenAI({
                 `Uploaded document type hint: ${documentTypeHint}. ` +
                 `This input contains original document pages ${chunk.pageStart}-${chunk.pageEnd} ` +
                 `of ${chunk.pagesTotal}. Use those absolute page numbers in all provenance fields. ` +
-                "Extract every report and measurement from these pages and return the strict JSON only.",
+                "Extract every report and measurement from these pages and return the strict JSON only." +
+                (focus ? ` ${focus}` : ""),
             },
             filePart,
           ],

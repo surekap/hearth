@@ -100,6 +100,35 @@ export function classifyWarning(text: string): ClassifiedWarning {
   };
 }
 
+/**
+ * Finds the extracted rows an ambiguity warning is talking about, by looking for
+ * their printed names in the warning text.
+ *
+ * An ambiguity cannot be resolved by re-reading — the document really is
+ * unclear — so the fix is the user correcting the affected row. This is what
+ * connects the warning to the row worth correcting.
+ *
+ * Names shorter than three characters are skipped: tokens like "T4" or "K"
+ * appear inside unrelated words and would mislabel the wrong row.
+ */
+export function rowsNamedInWarning<T extends { id: string; name: string | null }>(
+  text: string,
+  rows: T[]
+): T[] {
+  const haystack = text.toLowerCase();
+  const matched: T[] = [];
+  for (const row of rows) {
+    const name = row.name?.trim().toLowerCase();
+    if (!name || name.length < 3) continue;
+    // Word-ish boundaries so "ALT" does not match inside "salt".
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(haystack)) {
+      matched.push(row);
+    }
+  }
+  return matched;
+}
+
 export function classifyWarnings(texts: string[]): ClassifiedWarning[] {
   return texts.map(classifyWarning);
 }

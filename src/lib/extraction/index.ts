@@ -2,9 +2,9 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { decryptBuffer } from "@/lib/crypto";
 import { getObject } from "@/lib/storage";
-import { extractWithOpenAI, type ProviderOutput } from "./openai";
+import { extractWithOpenAI, extractPagesWithOpenAI, type ProviderOutput } from "./openai";
 import { extractWithMock } from "./mock";
-import { extractionItemsFromResult } from "./items";
+import { extractionItemsFromResult, newMeasurementsOnly } from "./items";
 import { extractClinicalImages } from "./clinical-images";
 import { extractionProviderName } from "./provider";
 export { extractionProviderName } from "./provider";
@@ -79,6 +79,80 @@ export async function queueDocumentExtraction(
   });
 
   return job;
+}
+
+/**
+ * Re-reads one page range of an already-extracted document with an exhaustive
+ * instruction, and appends only the measurements the job does not already have.
+ *
+ * This is the fix behind a `partial_table` warning: the page was extracted, but
+ * the model skipped cells. Re-running the whole document would be slow and would
+ * churn rows the user already reviewed, so the re-read is page-scoped and
+ * additive — nothing existing is modified or deleted.
+ */
+export async function reextractPageRange({
+  jobId,
+  pageStart,
+  pageEnd,
+}: {
+  jobId: string;
+  pageStart: number;
+  pageEnd: number;
+}): Promise<{ added: number; scanned: number }> {
+  const job = await db.query.extractionJobs.findFirst({
+    where: eq(schema.extractionJobs.id, jobId),
+  });
+  if (!job) throw new Error("Extraction job not found");
+
+  const doc = await db.query.documents.findFirst({
+    where: eq(schema.documents.id, job.documentId),
+  });
+  if (!doc) throw new Error("Document not found");
+  if (doc.mimeType !== "application/pdf") {
+    throw new Error("Targeted page re-extraction supports PDF documents only");
+  }
+  // The mock provider returns a fixed panel, so a re-read would add nothing and
+  // the OpenAI client would fail on a missing key. Say so plainly instead.
+  if (extractionProviderName() !== "openai") {
+    throw new Error(
+      "Re-reading a page needs the OpenAI extraction provider; the mock provider cannot re-read a document."
+    );
+  }
+
+  const plainDocument = decryptBuffer(await getObject(doc.storageKey));
+  const output = await extractPagesWithOpenAI({
+    buffer: plainDocument,
+    mimeType: doc.mimeType,
+    filename: doc.originalFilename,
+    documentTypeHint: doc.documentType,
+    pageStart,
+    pageEnd,
+  });
+
+  const candidates = extractionItemsFromResult({
+    result: output.result,
+    jobId: job.id,
+    profileId: doc.profileId,
+  });
+  const existing = await db.query.extractedItems.findMany({
+    where: eq(schema.extractedItems.extractionJobId, job.id),
+    columns: { itemType: true, rawJson: true },
+  });
+  const fresh = newMeasurementsOnly(candidates, existing);
+  if (fresh.length > 0) {
+    await db.insert(schema.extractedItems).values(fresh);
+  }
+
+  console.log("targeted page re-extraction", {
+    documentId: doc.id,
+    jobId: job.id,
+    pageStart,
+    pageEnd,
+    scanned: candidates.length,
+    added: fresh.length,
+  });
+
+  return { added: fresh.length, scanned: candidates.length };
 }
 
 /**

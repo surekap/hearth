@@ -1,9 +1,11 @@
 import OpenAI from "openai";
-import { extractionModel } from "@/lib/ai/models";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { extractionModel } from "../ai/models";
 import {
   extractionResultSchema,
   OPENAI_JSON_SCHEMA,
   type ExtractionResult,
+  type ExtractedReport,
   PROMPT_VERSION,
 } from "./schemas";
 
@@ -16,33 +18,510 @@ export type ProviderOutput = {
   engine: string;
 };
 
+const PDF_CHUNK_PAGES = 12;
+const PDF_CHUNK_OVERLAP = 1;
+const CHUNK_CONCURRENCY = 2;
+
 const SYSTEM_PROMPT = `You are a meticulous medical document extraction engine for a personal health record.
-You receive a single medical document (lab report, prescription, imaging/specialist report, discharge summary, genetic report, or invoice), usually from an Indian lab such as Apollo Diagnostics.
+You may receive one medical report or a page range from a bundle containing several independent reports.
 
 Rules:
-- Extract ONLY what is printed. Never invent values, units or reference ranges.
-- Inspect every page of multi-page PDFs. Do not stop at the first page or the visible preview.
-- Transcribe every test result you can find, including sub-panels and repeated table continuations.
-- canonical_name: map local names to international standard names (SGPT→ALT, SGOT→AST, "Glycosylated Hb"→HbA1c). Null if unsure.
-- For allergy/specific-IgE panels, every allergen row is a separate lab observation. Keep test_name as printed; use canonical_name "<Allergen> IgE" for allergen-specific IgE rows where the printed name omits IgE.
-- Numeric results go in "value"; qualitative results ("Positive", "Trace") go in "value_text".
-- Reference ranges: parse "0-45", "< 150", "> 40" into reference_low / reference_high, leaving the missing side null.
-- interpretation: judge from the printed value vs printed range (or printed H/L flags). "unknown" if no range.
-- report_date: the sample collection or report date printed on the document, ISO YYYY-MM-DD. Null if absent.
-- raw_text: full plain-text transcription of the document.
-- confidence: your certainty (0-1) that the row was read correctly.
-- Anything ambiguous goes into uncertain_items; document-level problems into warnings.
-- For non-lab documents fill the "report" object; for prescriptions fill "medications".
-- For imaging reports, preserve printed image/page comments in report.findings, including notes such as "Image not for diagnosis".
-- For DEXA/body-composition reports, capture BMD, T-score, Z-score, BMI, VAT/SAT and regional body-composition values in report.findings/report.summary. The original PDF remains the image attachment, so include enough page-level comments to find the relevant scan images later.
-- Respect the uploaded document type hint when it is not "other". If the hint is "genetic_report", keep observations empty unless the document prints true clinical lab-result rows.
-- For genetic reports:
-  - Set document_type to "genetic_report".
-  - Fill genetic_report with vendor/report metadata.
-  - Put disease predispositions and traits in genetic_risks. Use category "disease" or "trait".
-  - Put SNPs/star alleles/HLA tags/genotypes in genetic_variants when printed.
-  - Put drug response rows in pharmacogenomics.
-  - Preserve the report's wording, and do not upgrade predisposition into diagnosis or prescribing advice.`;
+- Extract ONLY what is printed. Never invent values, units, reference ranges, page numbers, or diagnoses.
+- Inspect every supplied page. Do not stop at the first page or visible preview.
+- Transcribe all clinically relevant source text. Preserve page boundaries with "[Page N]" markers.
+- Every independent non-lab study must be a separate object in reports. Never combine X-ray, ECG, spirometry, echocardiography, stress testing, ultrasound, DEXA, or body composition into one report.
+- Put every printed lab result in observations, including qualitative results, sub-panels, and table continuations.
+- Put EVERY labeled numeric or categorical result from a non-lab study in that report's measurements array, not only headline or abnormal values. Examples include FEV1/FVC, EF, chamber dimensions, METS, heart rate, BMD, T-score, Z-score, BMI, fat mass, and VAT/SAT.
+- canonical_name: use a stable international or plain-English measurement name. Keep it null if unsure.
+- Numeric results go in value; qualitative results go in value_text.
+- Reference ranges: parse "0-45", "<150", and ">40" into reference_low/reference_high, leaving the missing side null.
+- interpretation: use only printed flags or the printed result versus printed range. Use unknown when no range or flag exists.
+- Dates must follow the source's locale, not US month/day assumptions. Indian hospital dates are normally DD/MM/YYYY: for example, 01/09/2026 is 1 September 2026, not January 9. Use spelled-out dates elsewhere in the bundle, collection/report chronology, facility location, and patient context to resolve numeric dates consistently. If still ambiguous, use null and add an uncertain_items entry.
+- report_date at the document level is only for a date shared by the entire supplied input. Use null for a bundle with multiple dates. Every observation must carry the date printed on its own page in observation.report_date; do not copy a date from another page or report.
+- Assign each observation and measurement its absolute page number when visible or provided in the request.
+- Each PDF page may contain a small synthetic "HEARTH SOURCE PAGE N OF M" marker at its top edge. Use N for provenance, but never transcribe the marker as medical source text or treat it as a finding.
+- Every report needs study_name, report_type, page_start, and page_end. Use the absolute page numbers supplied in the request.
+- For imaging, preserve the complete findings and impression, including printed image/page comments.
+- For DEXA/body-composition reports, transcribe every populated table cell that represents a clinical measurement. This includes total and regional BMD/T-score/Z-score; total mass, tissue mass, fat-free mass, lean mass, fat mass and BMC; tissue and region fat percentages; android/gynoid values and ratio; VAT/SAT volume, mass and area; right/left balance; and measured age/height/weight when printed. Preserve the source page and exact unit. Do not omit values because they repeat elsewhere; chunk merging will deduplicate exact duplicates.
+- For prescriptions fill medications.
+- Anything ambiguous goes into uncertain_items; document-level or page-quality problems go into warnings.
+- coverage must honestly report the supplied document page total, pages processed, sections detected/extracted, and pages that could not be represented.
+- Respect a non-other document type hint.
+- For genetic reports, use genetic_report, genetic_risks, genetic_variants, and pharmacogenomics. Do not upgrade predisposition into diagnosis or prescribing advice.`;
+
+type Chunk = {
+  buffer: Buffer;
+  pageStart: number;
+  pageEnd: number;
+  pagesTotal: number;
+};
+
+function uniqueBy<T>(values: T[], key: (value: T) => string): T[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const id = key(value);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function dedupUnit(unit: string | null): string | null {
+  return unit?.normalize("NFKC").replace(/\u03bc/g, "\u00b5").replace(/\s+/g, "").toLowerCase() ?? null;
+}
+
+function normalizedReportName(report: ExtractedReport): string {
+  return report.study_name
+    .toLowerCase()
+    .replace(/\b(2d|report|study|test)\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function pageRangesTouch(a: ExtractedReport, b: ExtractedReport): boolean {
+  if (!a.page_start || !a.page_end || !b.page_start || !b.page_end) return false;
+  return a.page_start <= b.page_end + 1 && b.page_start <= a.page_end + 1;
+}
+
+function sameReport(a: ExtractedReport, b: ExtractedReport): boolean {
+  if (normalizedReportName(a) !== normalizedReportName(b)) return false;
+  return a.report_date === b.report_date || pageRangesTouch(a, b);
+}
+
+function reportDetailScore(report: ExtractedReport): number {
+  return (
+    (report.summary?.length ?? 0) +
+    (report.impression?.length ?? 0) +
+    report.findings.reduce((sum, finding) => sum + finding.length, 0)
+  );
+}
+
+function longer(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return b.length > a.length ? b : a;
+}
+
+function isInternalChunkNotice(notice: string): boolean {
+  const normalized = notice.toLowerCase();
+  return (
+    normalized.includes("supplied pages are original document pages") ||
+    normalized.includes("supplied pages are the original document pages") ||
+    normalized.includes("parsed text labels pages as") ||
+    normalized.includes("remapped to absolute page numbers") ||
+    normalized.includes("page provenance follows the requested absolute page range") ||
+    normalized.includes("source page order in the parsed text differs")
+  );
+}
+
+const MONTHS = new Map(
+  [
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "may",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "oct",
+    "nov",
+    "dec",
+  ].map((month, index) => [month, index + 1])
+);
+
+function isoDate(year: number, month: number, day: number): string | null {
+  const fullYear = year < 100 ? 2000 + year : year;
+  const date = new Date(Date.UTC(fullYear, month - 1, day));
+  if (
+    date.getUTCFullYear() !== fullYear ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return `${String(fullYear).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function explicitMonthDates(rawText: string): Set<string> {
+  const dates = new Set<string>();
+  const dayFirst =
+    /\b(\d{1,2})[\s/-]+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[\s,/-]+(\d{2,4})\b/gi;
+  const monthFirst =
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[\s/-]+(\d{1,2})(?:st|nd|rd|th)?[\s,/-]+(\d{2,4})\b/gi;
+  for (const match of rawText.matchAll(dayFirst)) {
+    const month = MONTHS.get(match[2].slice(0, 3).toLowerCase());
+    const date = month ? isoDate(Number(match[3]), month, Number(match[1])) : null;
+    if (date) dates.add(date);
+  }
+  for (const match of rawText.matchAll(monthFirst)) {
+    const month = MONTHS.get(match[1].slice(0, 3).toLowerCase());
+    const date = month ? isoDate(Number(match[3]), month, Number(match[2])) : null;
+    if (date) dates.add(date);
+  }
+  return dates;
+}
+
+/**
+ * Resolve numeric dates only when the document itself proves its convention.
+ * This catches bundles that mix 01/09/2026 with an unambiguous 01-Sep-26,
+ * while leaving genuinely ambiguous documents for human review.
+ */
+export function reconcileAmbiguousNumericDates(result: ExtractionResult): ExtractionResult {
+  const explicitDates = explicitMonthDates(result.raw_text);
+  const tokens = [...result.raw_text.matchAll(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/g)].map(
+    (match) => ({ first: Number(match[1]), second: Number(match[2]), year: Number(match[3]) })
+  );
+  let dayFirstEvidence = 0;
+  let monthFirstEvidence = 0;
+  for (const token of tokens) {
+    if (token.first > 12 && token.second <= 12) dayFirstEvidence += 1;
+    if (token.second > 12 && token.first <= 12) monthFirstEvidence += 1;
+    const dmy = isoDate(token.year, token.second, token.first);
+    const mdy = isoDate(token.year, token.first, token.second);
+    if (dmy && explicitDates.has(dmy) && dmy !== mdy) dayFirstEvidence += 2;
+    if (mdy && explicitDates.has(mdy) && dmy !== mdy) monthFirstEvidence += 2;
+  }
+  if (dayFirstEvidence === monthFirstEvidence) return result;
+
+  const dayFirst = dayFirstEvidence > monthFirstEvidence;
+  const corrections = new Map<string, string>();
+  for (const token of tokens) {
+    if (token.first > 12 || token.second > 12) continue;
+    const dmy = isoDate(token.year, token.second, token.first);
+    const mdy = isoDate(token.year, token.first, token.second);
+    if (!dmy || !mdy || dmy === mdy) continue;
+    corrections.set(dayFirst ? mdy : dmy, dayFirst ? dmy : mdy);
+  }
+  if (corrections.size === 0) return result;
+
+  const reconciled = structuredClone(result);
+  const correct = (date: string | null) => (date ? (corrections.get(date) ?? date) : null);
+  reconciled.report_date = correct(reconciled.report_date);
+  for (const observation of reconciled.observations) {
+    observation.report_date = correct(observation.report_date);
+  }
+  for (const report of reconciled.reports) report.report_date = correct(report.report_date);
+  reconciled.warnings = uniqueBy(
+    [
+      ...reconciled.warnings,
+      `Ambiguous numeric dates were normalized as ${dayFirst ? "day/month/year" : "month/day/year"} using unambiguous dates elsewhere in the document.`,
+    ],
+    (warning) => warning
+  );
+  return reconciled;
+}
+
+export function mergeExtractedReports(reports: ExtractedReport[]): ExtractedReport[] {
+  const merged: ExtractedReport[] = [];
+  const dateConflicts = new WeakSet<ExtractedReport>();
+  for (const report of reports) {
+    const existing = merged.find((candidate) => sameReport(candidate, report));
+    if (!existing) {
+      merged.push(structuredClone(report));
+      continue;
+    }
+
+    const preferIncomingMetadata = reportDetailScore(report) > reportDetailScore(existing);
+    if (
+      existing.report_date &&
+      report.report_date &&
+      existing.report_date !== report.report_date
+    ) {
+      dateConflicts.add(existing);
+      existing.report_date = null;
+    } else if (!existing.report_date && report.report_date && !dateConflicts.has(existing)) {
+      existing.report_date = report.report_date;
+    }
+    existing.findings = uniqueBy([...existing.findings, ...report.findings], (value) =>
+      value.toLowerCase().replace(/\s+/g, " ").trim()
+    );
+    existing.measurements = uniqueBy(
+      [...existing.measurements, ...report.measurements],
+      (measurement) =>
+        JSON.stringify([
+          measurement.canonical_name ?? measurement.name,
+          measurement.value,
+          measurement.value_text,
+          dedupUnit(measurement.unit),
+          measurement.page_number,
+        ])
+    );
+    existing.page_start = Math.min(
+      existing.page_start ?? Number.POSITIVE_INFINITY,
+      report.page_start ?? Number.POSITIVE_INFINITY
+    );
+    if (!Number.isFinite(existing.page_start)) existing.page_start = null;
+    existing.page_end = Math.max(existing.page_end ?? 0, report.page_end ?? 0) || null;
+    existing.summary = longer(existing.summary, report.summary);
+    existing.impression = longer(existing.impression, report.impression);
+    if (preferIncomingMetadata) {
+      existing.facility = report.facility ?? existing.facility;
+      existing.doctor_name = report.doctor_name ?? existing.doctor_name;
+      existing.body_part = report.body_part ?? existing.body_part;
+      existing.modality = report.modality ?? existing.modality;
+    }
+    existing.follow_up_recommended ||= report.follow_up_recommended;
+    existing.confidence = Math.min(existing.confidence, report.confidence);
+  }
+  return merged.sort(
+    (a, b) => (a.page_start ?? Number.MAX_SAFE_INTEGER) - (b.page_start ?? Number.MAX_SAFE_INTEGER)
+  );
+}
+
+export function mergeExtractionResults(
+  results: ExtractionResult[],
+  pagesTotal: number
+): ExtractionResult {
+  const reports = mergeExtractedReports(results.flatMap((result) => result.reports));
+  const observationMap = new Map<string, ExtractionResult["observations"][number]>();
+  const observationDateConflicts = new Set<string>();
+  for (const observation of results.flatMap((result) => result.observations)) {
+    const key = JSON.stringify([
+      observation.canonical_name ?? observation.test_name,
+      observation.value,
+      observation.value_text,
+      dedupUnit(observation.unit),
+      observation.page_number,
+    ]);
+    const existing = observationMap.get(key);
+    if (!existing) {
+      observationMap.set(key, structuredClone(observation));
+      continue;
+    }
+    if (
+      existing.report_date &&
+      observation.report_date &&
+      existing.report_date !== observation.report_date
+    ) {
+      existing.report_date = null;
+      observationDateConflicts.add(key);
+    } else if (
+      !existing.report_date &&
+      observation.report_date &&
+      !observationDateConflicts.has(key)
+    ) {
+      existing.report_date = observation.report_date;
+    }
+    existing.confidence = Math.min(existing.confidence, observation.confidence);
+  }
+  const observations = [...observationMap.values()];
+  const coveredPages = new Set<number>();
+  for (const observation of observations) {
+    if (observation.page_number) coveredPages.add(observation.page_number);
+  }
+  for (const report of reports) {
+    if (report.page_start && report.page_end) {
+      for (let page = report.page_start; page <= report.page_end; page += 1) coveredPages.add(page);
+    }
+  }
+  const unmatchedPages = Array.from({ length: pagesTotal }, (_, index) => index + 1).filter(
+    (page) => !coveredPages.has(page)
+  );
+  const detectedDocumentTypes = new Set(results.map((result) => result.document_type));
+  const documentType =
+    detectedDocumentTypes.size === 1 ? results[0].document_type : ("other" as const);
+  const documentDates = new Set(
+    results.map((result) => result.report_date).filter((date): date is string => Boolean(date))
+  );
+  const reportDateConflicts = reports
+    .filter((report) => report.report_date === null)
+    .filter((report) => {
+      const sourceDates = new Set(
+        results
+          .flatMap((result) => result.reports)
+          .filter(
+            (candidate) =>
+              normalizedReportName(candidate) === normalizedReportName(report) &&
+              pageRangesTouch(candidate, report)
+          )
+          .map((candidate) => candidate.report_date)
+          .filter((date): date is string => Boolean(date))
+      );
+      return sourceDates.size > 1;
+    })
+    .map((report) => `Conflicting dates were extracted for ${report.study_name}; date left unset.`);
+
+  return {
+    document_type: documentType,
+    report_date: documentDates.size === 1 ? [...documentDates][0] : null,
+    lab_name: results.find((result) => result.lab_name)?.lab_name ?? null,
+    patient_name: results.find((result) => result.patient_name)?.patient_name ?? null,
+    raw_text: results
+      .map((result, index) => `[Extraction chunk ${index + 1}]\n${result.raw_text}`)
+      .join("\n\n"),
+    observations,
+    reports,
+    medications: uniqueBy(results.flatMap((result) => result.medications), JSON.stringify),
+    genetic_report: results.find((result) => result.genetic_report)?.genetic_report ?? null,
+    genetic_variants: uniqueBy(
+      results.flatMap((result) => result.genetic_variants),
+      JSON.stringify
+    ),
+    genetic_risks: uniqueBy(results.flatMap((result) => result.genetic_risks), JSON.stringify),
+    pharmacogenomics: uniqueBy(
+      results.flatMap((result) => result.pharmacogenomics),
+      JSON.stringify
+    ),
+    coverage: {
+      pages_total: pagesTotal,
+      pages_processed: pagesTotal,
+      sections_detected: reports.length + (observations.length > 0 ? 1 : 0),
+      sections_extracted: reports.length + (observations.length > 0 ? 1 : 0),
+      unmatched_pages: unmatchedPages,
+    },
+    warnings: uniqueBy(
+      [
+        ...results
+          .flatMap((result) => result.warnings)
+          .filter((warning) => !isInternalChunkNotice(warning)),
+        ...reportDateConflicts,
+        ...(observationDateConflicts.size > 0
+          ? ["Conflicting dates were extracted for one or more observations; those dates were left unset."]
+          : []),
+        ...(documentDates.size > 1
+          ? ["Multiple document-level dates were extracted; the shared document date was left unset."]
+          : []),
+      ],
+      (warning) => warning
+    ),
+    uncertain_items: uniqueBy(
+      results
+        .flatMap((result) => result.uncertain_items)
+        .filter((item) => !isInternalChunkNotice(item)),
+      (item) => item
+    ),
+  };
+}
+
+async function splitPdf(buffer: Buffer): Promise<Chunk[]> {
+  const source = await PDFDocument.load(buffer);
+  const pagesTotal = source.getPageCount();
+  const chunks: Chunk[] = [];
+  const advance = PDF_CHUNK_PAGES - PDF_CHUNK_OVERLAP;
+  for (let start = 0; start < pagesTotal; start += advance) {
+    const end = Math.min(start + PDF_CHUNK_PAGES, pagesTotal);
+    const output = await PDFDocument.create();
+    const provenanceFont = await output.embedFont(StandardFonts.Helvetica);
+    const copied = await output.copyPages(
+      source,
+      Array.from({ length: end - start }, (_, index) => start + index)
+    );
+    for (const [index, page] of copied.entries()) {
+      page.drawText(`HEARTH SOURCE PAGE ${start + index + 1} OF ${pagesTotal}`, {
+        x: 8,
+        y: Math.max(4, page.getHeight() - 9),
+        size: 6,
+        font: provenanceFont,
+        color: rgb(0.45, 0.45, 0.45),
+        opacity: 0.8,
+      });
+      output.addPage(page);
+    }
+    chunks.push({
+      buffer: Buffer.from(await output.save()),
+      pageStart: start + 1,
+      pageEnd: end,
+      pagesTotal,
+    });
+    if (end === pagesTotal) break;
+  }
+  return chunks;
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  limit: number,
+  task: (value: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await task(values[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, worker));
+  return results;
+}
+
+async function extractChunkWithOpenAI({
+  client,
+  model,
+  chunk,
+  mimeType,
+  filename,
+  documentTypeHint,
+  signal,
+}: {
+  client: OpenAI;
+  model: string;
+  chunk: Chunk;
+  mimeType: string;
+  filename: string;
+  documentTypeHint: string;
+  signal?: AbortSignal;
+}): Promise<ProviderOutput> {
+  const filePart =
+    mimeType === "application/pdf"
+      ? {
+          type: "input_file" as const,
+          filename: filename || "document.pdf",
+          file_data: `data:application/pdf;base64,${chunk.buffer.toString("base64")}`,
+        }
+      : {
+          type: "input_image" as const,
+          image_url: `data:${mimeType};base64,${chunk.buffer.toString("base64")}`,
+          detail: "high" as const,
+        };
+
+  const response = await client.responses.create(
+    {
+      model,
+      instructions: SYSTEM_PROMPT,
+      max_output_tokens: 16000,
+      reasoning: { effort: "low" },
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text:
+                `Uploaded document type hint: ${documentTypeHint}. ` +
+                `This input contains original document pages ${chunk.pageStart}-${chunk.pageEnd} ` +
+                `of ${chunk.pagesTotal}. Use those absolute page numbers in all provenance fields. ` +
+                "Extract every report and measurement from these pages and return the strict JSON only.",
+            },
+            filePart,
+          ],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "medical_extraction_v3",
+          schema: OPENAI_JSON_SCHEMA as unknown as Record<string, unknown>,
+          strict: true,
+        },
+      },
+    },
+    { maxRetries: 1, signal, timeout: 240_000 }
+  );
+
+  const result = extractionResultSchema.parse(JSON.parse(response.output_text));
+  return {
+    result,
+    model,
+    promptVersion: PROMPT_VERSION,
+    inputTokens: response.usage?.input_tokens ?? null,
+    outputTokens: response.usage?.output_tokens ?? null,
+    engine: `openai:${model}`,
+  };
+}
 
 export async function extractWithOpenAI(input: {
   buffer: Buffer;
@@ -53,60 +532,35 @@ export async function extractWithOpenAI(input: {
 }): Promise<ProviderOutput> {
   const client = new OpenAI();
   const model = extractionModel();
-
-  const base64 = input.buffer.toString("base64");
-  const filePart =
+  const chunks =
     input.mimeType === "application/pdf"
-      ? {
-          type: "input_file" as const,
-          filename: input.filename || "document.pdf",
-          file_data: `data:application/pdf;base64,${base64}`,
-        }
-      : {
-          type: "input_image" as const,
-          image_url: `data:${input.mimeType};base64,${base64}`,
-          detail: "high" as const,
-        };
-
-  const response = await client.responses.create(
-    {
+      ? await splitPdf(input.buffer)
+      : [{ buffer: input.buffer, pageStart: 1, pageEnd: 1, pagesTotal: 1 }];
+  const outputs = await mapWithConcurrency(chunks, CHUNK_CONCURRENCY, (chunk) =>
+    extractChunkWithOpenAI({
+      client,
       model,
-      instructions: SYSTEM_PROMPT,
-      max_output_tokens: 16000,
-      reasoning: { effort: "none" },
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: `Uploaded document type hint: ${input.documentTypeHint}. Extract structured data from this medical document. Return the strict JSON only.`,
-            },
-            filePart,
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "medical_extraction",
-          schema: OPENAI_JSON_SCHEMA as unknown as Record<string, unknown>,
-          strict: true,
-        },
-      },
-    },
-    { maxRetries: 0, signal: input.signal, timeout: 240_000 }
+      chunk,
+      mimeType: input.mimeType,
+      filename: input.filename,
+      documentTypeHint: input.documentTypeHint,
+      signal: input.signal,
+    })
   );
-
-  const raw = response.output_text;
-  const result = extractionResultSchema.parse(JSON.parse(raw));
+  const inputTokens = outputs.reduce((sum, output) => sum + (output.inputTokens ?? 0), 0);
+  const outputTokens = outputs.reduce((sum, output) => sum + (output.outputTokens ?? 0), 0);
 
   return {
-    result,
+    result: reconcileAmbiguousNumericDates(
+      mergeExtractionResults(
+        outputs.map((output) => output.result),
+        chunks[0].pagesTotal
+      )
+    ),
     model,
     promptVersion: PROMPT_VERSION,
-    inputTokens: response.usage?.input_tokens ?? null,
-    outputTokens: response.usage?.output_tokens ?? null,
-    engine: `openai:${model}`,
+    inputTokens: outputs.some((output) => output.inputTokens != null) ? inputTokens : null,
+    outputTokens: outputs.some((output) => output.outputTokens != null) ? outputTokens : null,
+    engine: `openai:${model}${chunks.length > 1 ? `:chunked-${chunks.length}` : ""}`,
   };
 }

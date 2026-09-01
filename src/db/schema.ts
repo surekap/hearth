@@ -68,6 +68,7 @@ export const extractionJobStatusEnum = pgEnum("extraction_job_status", [
 
 export const extractedItemTypeEnum = pgEnum("extracted_item_type", [
   "lab_observation",
+  "diagnostic_measurement",
   "medication",
   "diagnosis",
   "procedure",
@@ -349,6 +350,9 @@ export const extractionJobs = pgTable(
     piiRedacted: boolean("pii_redacted").notNull().default(false),
     inputTokenCount: integer("input_token_count"),
     outputTokenCount: integer("output_token_count"),
+    warnings: jsonb("warnings").notNull().default([]),
+    uncertainItems: jsonb("uncertain_items").notNull().default([]),
+    coverageJson: jsonb("coverage_json"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     error: text("error"),
@@ -565,6 +569,9 @@ export const clinicalReports = pgTable(
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     reportType: clinicalReportTypeEnum("report_type").notNull().default("other"),
+    studyName: text("study_name"),
+    modality: text("modality"),
+    bodyPart: text("body_part"),
     specialty: text("specialty"),
     reportDate: date("report_date"),
     facility: text("facility"),
@@ -573,9 +580,63 @@ export const clinicalReports = pgTable(
     findingsJson: jsonb("findings_json"),
     impression: text("impression"),
     followUpRecommended: boolean("follow_up_recommended").notNull().default(false),
+    pageStart: integer("page_start"),
+    pageEnd: integer("page_end"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("clinical_reports_profile_idx").on(t.profileId)]
+  (t) => [
+    index("clinical_reports_profile_idx").on(t.profileId),
+    index("clinical_reports_document_idx").on(t.documentId),
+  ]
+);
+
+/**
+ * Rebuildable, encrypted visual derivatives from clinical documents.
+ * The original document remains the source of truth; these rows make scan
+ * pages discoverable and comparable without exposing plaintext in storage.
+ */
+export const clinicalImages = pgTable(
+  "clinical_images",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    extractionJobId: uuid("extraction_job_id")
+      .notNull()
+      .references(() => extractionJobs.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("draft"),
+    assetKind: text("asset_kind").notNull(),
+    comparisonKey: text("comparison_key").notNull(),
+    studyName: text("study_name"),
+    modality: text("modality"),
+    bodyPart: text("body_part"),
+    laterality: text("laterality"),
+    view: text("view"),
+    reportDate: date("report_date"),
+    sourcePage: integer("source_page"),
+    pageLabel: text("page_label"),
+    storageKey: text("storage_key").notNull(),
+    sha256Hash: text("sha256_hash").notNull(),
+    mimeType: text("mime_type").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    metadataJson: jsonb("metadata_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("clinical_images_profile_comparison_idx").on(t.profileId, t.comparisonKey),
+    index("clinical_images_document_idx").on(t.documentId),
+    index("clinical_images_job_idx").on(t.extractionJobId),
+    uniqueIndex("clinical_images_job_page_key_idx").on(
+      t.extractionJobId,
+      t.sourcePage,
+      t.comparisonKey
+    ),
+  ]
 );
 
 export const geneticReports = pgTable(

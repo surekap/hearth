@@ -1,9 +1,13 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { getMarkers, type Marker } from "./markers";
 import { getClinicalAttentionIndex, getMetricIndex, type MetricIndexRow } from "./metric";
-import { attentionState, formatMetricValue } from "./series";
-import { metricBelongsTo, SYSTEMS, type SystemMedia } from "./systems";
+import { attentionState, formatMetricDisplay } from "./series";
+import { metricBelongsTo, selectSystemHero, SYSTEMS, type SystemMedia } from "./systems";
+import {
+  buildClinicalImportBatches,
+  type ClinicalImportBatch,
+} from "./clinical-imports";
 
 export type OverviewSystemCard = {
   id: string;
@@ -29,6 +33,7 @@ export type OverviewData = {
   systems: OverviewSystemCard[];
   measurementCount: number;
   careAreas: OverviewCareArea[];
+  recentClinicalImports: ClinicalImportBatch[];
   recentMarkers: Marker[];
 };
 
@@ -69,11 +74,7 @@ export async function getOverviewData(profileId: string): Promise<OverviewData> 
       metricBelongsTo(def, { category: row.category, name: row.name })
     );
     if (members.length === 0) continue;
-    const byName = new Map(members.map((m) => [m.name, m]));
-    const heroRow =
-      def.heroMetrics.map((n) => byName.get(n)).find((r) => r && r.latestValue != null) ??
-      members.find((m) => m.latestValue != null) ??
-      null;
+    const heroRow = selectSystemHero(def, members);
     const memberTypeIds = new Set(members.map((member) => member.typeId));
     const anyAttention = attention.some(
       (metric) => memberTypeIds.has(metric.typeId)
@@ -86,7 +87,10 @@ export async function getOverviewData(profileId: string): Promise<OverviewData> 
       tone: anyAttention ? "danger" : heroRow ? "success" : "neutral",
       memberCount: members.length,
       hero: heroRow
-        ? { name: heroRow.name, value: formatMetricValue(heroRow.latestValue!, heroRow.unit) }
+        ? {
+            name: heroRow.name,
+            value: formatMetricDisplay(heroRow.latestValue, heroRow.latestText, heroRow.unit),
+          }
         : null,
     });
   }
@@ -94,7 +98,7 @@ export async function getOverviewData(profileId: string): Promise<OverviewData> 
   const reports = await db.query.clinicalReports.findMany({
     where: eq(schema.clinicalReports.profileId, profileId),
     orderBy: [desc(schema.clinicalReports.createdAt)],
-    limit: 50,
+    limit: 200,
   });
   const careMap = new Map<string, OverviewCareArea>();
   for (const report of reports) {
@@ -119,6 +123,86 @@ export async function getOverviewData(profileId: string): Promise<OverviewData> 
   }
 
   const markers = await getMarkers(profileId, null);
+  const recentDocuments = await db.query.documents.findMany({
+    where: and(
+      eq(schema.documents.profileId, profileId),
+      eq(schema.documents.extractionStatus, "confirmed")
+    ),
+    orderBy: [desc(schema.documents.uploadedAt)],
+    limit: 50,
+    columns: {
+      id: true,
+      originalFilename: true,
+      documentDate: true,
+      uploadedAt: true,
+    },
+  });
+  const documentIds = recentDocuments.map((document) => document.id);
+  const [importObservations, importImages] =
+    documentIds.length > 0
+      ? await Promise.all([
+          db
+            .select({
+              documentId: schema.observations.documentId,
+              observedAt: schema.observations.observedAt,
+              createdAt: schema.observations.createdAt,
+              name: schema.observationTypes.canonicalName,
+              category: schema.observationTypes.category,
+              valueNumeric: schema.observations.valueNumeric,
+              valueText: schema.observations.valueText,
+              unit: schema.observations.unit,
+              interpretation: schema.observations.interpretation,
+              kind: sql<string | null>`${schema.observations.metadataJson}->>'kind'`,
+            })
+            .from(schema.observations)
+            .innerJoin(
+              schema.observationTypes,
+              eq(schema.observations.observationTypeId, schema.observationTypes.id)
+            )
+            .where(
+              and(
+                eq(schema.observations.profileId, profileId),
+                eq(schema.observations.status, "confirmed"),
+                inArray(schema.observations.documentId, documentIds)
+              )
+            )
+            .limit(5000),
+          db.query.clinicalImages.findMany({
+            where: and(
+              eq(schema.clinicalImages.profileId, profileId),
+              eq(schema.clinicalImages.status, "accepted"),
+              inArray(schema.clinicalImages.documentId, documentIds)
+            ),
+            columns: {
+              documentId: true,
+              reportDate: true,
+              createdAt: true,
+            },
+            limit: 1000,
+          }),
+        ])
+      : [[], []];
+  const recentClinicalImports = buildClinicalImportBatches({
+    documents: recentDocuments.map((document) => ({
+      id: document.id,
+      filename: document.originalFilename,
+      documentDate: document.documentDate,
+      uploadedAt: document.uploadedAt,
+    })),
+    observations: importObservations
+      .filter((observation) => observation.documentId != null)
+      .map((observation) => ({ ...observation, documentId: observation.documentId! })),
+    reports: reports
+      .filter((report) => documentIds.includes(report.documentId))
+      .map((report) => ({
+        documentId: report.documentId,
+        reportDate: report.reportDate,
+        createdAt: report.createdAt,
+        studyName: report.studyName,
+        reportType: report.reportType,
+      })),
+    images: importImages,
+  });
 
   return {
     attention: attention.slice(0, 8),
@@ -128,6 +212,7 @@ export async function getOverviewData(profileId: string): Promise<OverviewData> 
     careAreas: [...careMap.values()].sort((a, b) =>
       (b.latestDate ?? "").localeCompare(a.latestDate ?? "")
     ),
+    recentClinicalImports,
     recentMarkers: markers.slice(-8).reverse(),
   };
 }

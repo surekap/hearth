@@ -261,7 +261,7 @@ export async function buildDoctorPdf(bundle: ProfileBundle): Promise<Uint8Array>
       cols(
         [
           fmtDate(r.reportDate),
-          { t: r.reportType, font: bold },
+          { t: r.studyName ?? r.reportType, font: bold },
           r.impression ?? r.summary ?? "—",
         ],
         [0, 90, 180]

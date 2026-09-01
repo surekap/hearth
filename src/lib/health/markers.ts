@@ -1,11 +1,8 @@
 import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { limitRecentMarkers, type Marker } from "./marker-utils";
 
-export type Marker = {
-  date: string;
-  label: string;
-  kind: "report" | "prescription" | "document" | "medication";
-};
+export type { Marker } from "./marker-utils";
 
 const MARKER_DOC_TYPES = [
   "prescription",
@@ -22,7 +19,11 @@ export async function getMarkers(profileId: string, start: Date | null): Promise
     orderBy: [asc(schema.documents.uploadedAt)],
   });
   const markers: Marker[] = docs
-    .filter((d) => (MARKER_DOC_TYPES as readonly string[]).includes(d.documentType))
+    .filter(
+      (d) =>
+        (MARKER_DOC_TYPES as readonly string[]).includes(d.documentType) ||
+        d.extractionStatus === "confirmed"
+    )
     .map((d) => ({
       date: (d.documentDate ? new Date(d.documentDate) : d.uploadedAt).toISOString(),
       label:
@@ -31,8 +32,10 @@ export async function getMarkers(profileId: string, start: Date | null): Promise
           : d.documentType === "imaging"
             ? "Imaging"
             : d.documentType === "genetic_report"
-              ? "Genetic report"
-              : "Specialist report",
+            ? "Genetic report"
+              : d.documentType === "other"
+                ? "Clinical report"
+                : "Specialist report",
       kind: d.documentType === "prescription" ? "prescription" : "report",
     }));
 
@@ -50,13 +53,7 @@ export async function getMarkers(profileId: string, start: Date | null): Promise
     }
   }
 
-  const inRange = markers
-    .filter((m) => !start || new Date(m.date) >= start)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  // Charts get unreadable past ~20 rules; keep medications first, then reports.
-  if (inRange.length <= 20) return inRange;
-  const meds = inRange.filter((m) => m.kind === "medication");
-  const rest = inRange.filter((m) => m.kind !== "medication");
-  return [...meds, ...rest].slice(0, 20).sort((a, b) => a.date.localeCompare(b.date));
+  return limitRecentMarkers(
+    markers.filter((marker) => !start || new Date(marker.date) >= start)
+  );
 }

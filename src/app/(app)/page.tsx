@@ -169,7 +169,8 @@ export default async function TimelinePage() {
     events.push({
       date: r.reportDate ? new Date(r.reportDate) : r.createdAt,
       kind: "report",
-      title: `${r.reportType === "imaging" ? "Imaging" : "Clinical"} report`,
+      title:
+        r.studyName ?? `${r.reportType === "imaging" ? "Imaging" : "Clinical"} report`,
       detail: r.impression ?? r.summary ?? "",
       href: `/documents/${r.documentId}/review`,
       badge: r.followUpRecommended

@@ -33,6 +33,12 @@ export default async function ReviewPage({
         orderBy: [asc(schema.extractedItems.createdAt)],
       })
     : [];
+  const images = job
+    ? await db.query.clinicalImages.findMany({
+        where: eq(schema.clinicalImages.extractionJobId, job.id),
+        orderBy: [asc(schema.clinicalImages.sourcePage)],
+      })
+    : [];
 
   const observationTypes = await db.query.observationTypes.findMany({
     orderBy: [asc(schema.observationTypes.canonicalName)],
@@ -57,6 +63,14 @@ export default async function ReviewPage({
               status: job.status,
               model: job.modelUsed,
               error: job.error,
+              warnings: Array.isArray(job.warnings) ? (job.warnings as string[]) : [],
+              uncertainItems: Array.isArray(job.uncertainItems)
+                ? (job.uncertainItems as string[])
+                : [],
+              coverage:
+                job.coverageJson && typeof job.coverageJson === "object"
+                  ? (job.coverageJson as Record<string, unknown>)
+                  : null,
             }
           : null
       }
@@ -67,6 +81,16 @@ export default async function ReviewPage({
         rawJson: i.rawJson as Record<string, unknown>,
         confidence: i.confidence,
         userCorrected: i.userCorrected,
+      }))}
+      images={images.map((image) => ({
+        id: image.id,
+        status: image.status,
+        assetKind: image.assetKind,
+        studyName: image.studyName,
+        pageLabel: image.pageLabel,
+        sourcePage: image.sourcePage,
+        width: image.width,
+        height: image.height,
       }))}
       observationTypes={observationTypes}
     />

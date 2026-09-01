@@ -168,6 +168,15 @@ export function formatMetricValue(value: number, unit?: string | null): string {
   return `${formatMetricNumber(value, u)}${u ? ` ${u}` : ""}`;
 }
 
+export function formatMetricDisplay(
+  valueNumeric: number | null,
+  valueText: string | null,
+  unit?: string | null
+): string {
+  if (valueNumeric != null) return formatMetricValue(valueNumeric, unit);
+  return valueText?.trim() || "—";
+}
+
 /** Even-step downsample that always keeps the final element. */
 export function downsampleEven<T>(items: T[], max: number): T[] {
   if (items.length <= max) return items;

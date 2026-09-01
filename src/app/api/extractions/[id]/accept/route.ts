@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { scheduleInsightRefresh } from "@/lib/ai/insights";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { requireUser, requireProfile, handleApiError, ApiError, logAudit } from "@/lib/api";
@@ -34,6 +34,13 @@ type LabRaw = {
   interpretation?: "low" | "normal" | "high" | "critical" | "unknown";
   report_date?: string | null;
   confidence?: number;
+  category?: (typeof schema.observationCategoryEnum.enumValues)[number];
+  page_number?: number | null;
+  study_name?: string | null;
+  report_type?: string | null;
+  modality?: string | null;
+  page_start?: number | null;
+  page_end?: number | null;
 };
 
 const blockedDynamicTestNames = new Set([
@@ -111,6 +118,9 @@ function dynamicObservationName(raw: LabRaw): string | null {
 function inferObservationCategory(
   raw: LabRaw
 ): (typeof schema.observationCategoryEnum.enumValues)[number] {
+  if (raw.category && schema.observationCategoryEnum.enumValues.includes(raw.category)) {
+    return raw.category;
+  }
   if (looksLikeAllergenSpecificIge(raw)) return "allergy";
 
   const name = `${raw.test_name ?? ""} ${raw.canonical_name ?? ""}`.toLowerCase();
@@ -293,6 +303,30 @@ export async function POST(
     const createdObservationTypes: string[] = [];
     const now = new Date();
 
+    const currentJobAlreadyAccepted = await db.query.extractedItems.findFirst({
+      where: and(
+        eq(schema.extractedItems.extractionJobId, job.id),
+        eq(schema.extractedItems.status, "accepted")
+      ),
+    });
+    const replacingDocumentRecords = !currentJobAlreadyAccepted && body.acceptItemIds.length > 0;
+    const previousObservationIds = replacingDocumentRecords
+      ? (
+          await db.query.observations.findMany({
+            where: eq(schema.observations.documentId, doc.id),
+            columns: { id: true },
+          })
+        ).map((row) => row.id)
+      : [];
+    const previousReportIds = replacingDocumentRecords
+      ? (
+          await db.query.clinicalReports.findMany({
+            where: eq(schema.clinicalReports.documentId, doc.id),
+            columns: { id: true },
+          })
+        ).map((row) => row.id)
+      : [];
+
     for (const item of items) {
       if (body.rejectItemIds.includes(item.id)) {
         await db
@@ -303,7 +337,7 @@ export async function POST(
       }
       if (item.status === "accepted") continue;
 
-      if (item.itemType === "lab_observation") {
+      if (item.itemType === "lab_observation" || item.itemType === "diagnostic_measurement") {
         const raw = item.rawJson as LabRaw;
         let type = raw.observation_type_id
           ? (await db.query.observationTypes.findFirst({
@@ -311,7 +345,10 @@ export async function POST(
             })) ?? null
           : resolveObservationType(canonicalMap, inferredCanonicalCandidates(raw));
 
-        if (!type && body.createMissingObservationTypes) {
+        if (
+          !type &&
+          (body.createMissingObservationTypes || item.itemType === "diagnostic_measurement")
+        ) {
           type = await createValidatedObservationType({
             raw,
             canonicalMap,
@@ -359,6 +396,21 @@ export async function POST(
           source: "document",
           confidence: raw.confidence ?? item.confidence,
           status: "confirmed",
+          metadataJson:
+            item.itemType === "diagnostic_measurement"
+              ? {
+                  kind: "diagnostic_measurement",
+                  studyName: raw.study_name ?? null,
+                  reportType: raw.report_type ?? null,
+                  modality: raw.modality ?? null,
+                  pageNumber: raw.page_number ?? null,
+                  pageStart: raw.page_start ?? null,
+                  pageEnd: raw.page_end ?? null,
+                  extractionItemId: item.id,
+                }
+              : raw.page_number
+                ? { pageNumber: raw.page_number, extractionItemId: item.id }
+                : { extractionItemId: item.id },
         });
       } else if (item.itemType === "report_summary") {
         const raw = item.rawJson as Record<string, unknown>;
@@ -366,13 +418,21 @@ export async function POST(
           profileId: job.profileId,
           documentId: doc.id,
           reportType:
-            doc.documentType === "imaging"
-              ? "imaging"
-              : doc.documentType === "discharge_summary"
-                ? "discharge"
-                : doc.documentType === "specialist_report"
-                  ? "specialist"
-                  : "other",
+            raw.report_type === "imaging" ||
+            raw.report_type === "specialist" ||
+            raw.report_type === "procedure" ||
+            raw.report_type === "discharge"
+              ? raw.report_type
+              : doc.documentType === "imaging"
+                ? "imaging"
+                : doc.documentType === "discharge_summary"
+                  ? "discharge"
+                  : doc.documentType === "specialist_report"
+                    ? "specialist"
+                    : "other",
+          studyName: (raw.study_name as string) ?? null,
+          modality: (raw.modality as string) ?? null,
+          bodyPart: (raw.body_part as string) ?? null,
           specialty: (raw.specialty as string) ?? null,
           reportDate: (raw.report_date as string) ?? doc.documentDate,
           facility: (raw.facility as string) ?? null,
@@ -381,6 +441,8 @@ export async function POST(
           findingsJson: raw.findings ?? null,
           impression: (raw.impression as string) ?? null,
           followUpRecommended: !!raw.follow_up_recommended,
+          pageStart: (raw.page_start as number) ?? null,
+          pageEnd: (raw.page_end as number) ?? null,
         });
       } else if (item.itemType === "medication") {
         const raw = item.rawJson as {
@@ -498,6 +560,36 @@ export async function POST(
         .set({ status: "accepted", acceptedAt: now })
         .where(eq(schema.extractedItems.id, item.id));
       accepted.push(item.id);
+    }
+
+    // Superseded records are removed only after the full replacement batch succeeds.
+    if (accepted.length > 0 && previousObservationIds.length > 0) {
+      await db
+        .delete(schema.observations)
+        .where(inArray(schema.observations.id, previousObservationIds));
+    }
+    if (accepted.length > 0 && previousReportIds.length > 0) {
+      await db
+        .delete(schema.clinicalReports)
+        .where(inArray(schema.clinicalReports.id, previousReportIds));
+    }
+
+    if (accepted.length > 0) {
+      if (replacingDocumentRecords) {
+        await db
+          .update(schema.clinicalImages)
+          .set({ status: "superseded" })
+          .where(
+            and(
+              eq(schema.clinicalImages.documentId, doc.id),
+              ne(schema.clinicalImages.extractionJobId, job.id)
+            )
+          );
+      }
+      await db
+        .update(schema.clinicalImages)
+        .set({ status: "accepted" })
+        .where(eq(schema.clinicalImages.extractionJobId, job.id));
     }
 
     // Job + document status roll-up

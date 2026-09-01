@@ -115,7 +115,7 @@ export function buildFhirBundle(bundle: ProfileBundle) {
         status: "final",
         subject: { reference: `Patient/${patientId}` },
         effectiveDateTime: r.reportDate ?? undefined,
-        code: { text: r.reportType },
+        code: { text: r.studyName ?? r.reportType },
         conclusion: r.impression ?? r.summary ?? undefined,
       },
     });

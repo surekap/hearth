@@ -1,55 +1,34 @@
-import { mkdir, readFile, writeFile, unlink } from "fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import path from "path";
 
 /**
- * Object storage abstraction. Uses Vercel Blob when BLOB_READ_WRITE_TOKEN is
- * set; otherwise falls back to local disk under ./storage (dev only).
- * All stored payloads are already AES-256-GCM encrypted by the caller —
- * the storage backend never sees plaintext documents.
- *
- * putObject returns the canonical storage key to persist: the blob URL for
- * Vercel Blob, or the relative key for local disk.
+ * Encrypted document storage backed by the host filesystem. In production,
+ * Docker mounts durable storage at DOCUMENT_STORAGE_DIR. All payloads are
+ * AES-256-GCM encrypted by the caller, so this layer never sees plaintext.
  */
 
-const LOCAL_DIR = path.join(process.cwd(), "storage");
-
-function shouldUseBlob() {
-  return !!process.env.BLOB_READ_WRITE_TOKEN;
-}
-
-/**
- * Local-disk storage only exists for development. On Vercel the filesystem is
- * read-only, so falling through to it means Blob isn't configured — fail with
- * a clear message instead of a confusing ENOENT from mkdir.
- */
-function assertLocalDiskAllowed() {
-  if (process.env.VERCEL) {
-    throw new Error(
-      "Document storage is not configured: BLOB_READ_WRITE_TOKEN is missing. " +
-        "Connect a Vercel Blob store to this project and redeploy."
-    );
-  }
+function storageRoot() {
+  const defaultRoot = path.join(
+    /* turbopackIgnore: true */ process.cwd(),
+    "storage"
+  );
+  return path.resolve(
+    process.env.DOCUMENT_STORAGE_DIR ?? defaultRoot
+  );
 }
 
 function localObjectPath(key: string) {
-  const root = path.resolve(LOCAL_DIR);
-  const filePath = path.resolve(root, key);
+  if (/^https?:\/\//i.test(key)) {
+    throw new Error("Remote object storage keys are not supported");
+  }
+
+  const root = storageRoot();
+  const filePath = path.resolve(/* turbopackIgnore: true */ root, key);
   if (filePath !== root && filePath.startsWith(`${root}${path.sep}`)) return filePath;
   throw new Error("Invalid storage key");
 }
 
 export async function putObject(key: string, data: Buffer): Promise<string> {
-  if (shouldUseBlob()) {
-    const { put } = await import("@vercel/blob");
-    const blob = await put(key, data, {
-      // Payload is encrypted and only read back through authenticated API routes.
-      access: "private",
-      contentType: "application/octet-stream",
-      addRandomSuffix: true,
-    });
-    return blob.url;
-  }
-  assertLocalDiskAllowed();
   const filePath = localObjectPath(key);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, data);
@@ -57,24 +36,9 @@ export async function putObject(key: string, data: Buffer): Promise<string> {
 }
 
 export async function getObject(storedKey: string): Promise<Buffer> {
-  if (storedKey.startsWith("http")) {
-    const { get } = await import("@vercel/blob");
-    const blob = await get(storedKey, { access: "private" });
-    if (!blob) throw new Error("Blob fetch failed: not found");
-    if (blob.statusCode !== 200 || !blob.stream) {
-      throw new Error(`Blob fetch failed: ${blob.statusCode}`);
-    }
-    return Buffer.from(await new Response(blob.stream).arrayBuffer());
-  }
-  assertLocalDiskAllowed();
   return readFile(localObjectPath(storedKey));
 }
 
 export async function deleteObject(storedKey: string): Promise<void> {
-  if (storedKey.startsWith("http")) {
-    const { del } = await import("@vercel/blob");
-    await del(storedKey);
-    return;
-  }
   await unlink(localObjectPath(storedKey)).catch(() => {});
 }

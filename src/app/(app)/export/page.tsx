@@ -37,7 +37,9 @@ export default async function ExportPage() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   const apiToken = user?.apiToken ?? "<generate a token below>";
   const ingestRoot = "/path/to/prescriptions";
-  const projectRoot = process.env.VERCEL ? "/path/to/hearth" : process.cwd();
+  const projectRoot =
+    process.env.HEARTH_MCP_PROJECT_ROOT ??
+    (process.env.NODE_ENV === "production" ? "/path/to/hearth" : process.cwd());
   const mcpEnv = `HEARTH_API_TOKEN=${apiToken}
 HEARTH_INGEST_ROOTS=${ingestRoot}
 HEARTH_APP_URL=${appUrl}`;

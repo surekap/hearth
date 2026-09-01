@@ -13,8 +13,8 @@ AI Q&A, medication logging, and JSON / FHIR / doctor-friendly PDF export.
 - **Next.js 16** (App Router, Turbopack) · TypeScript · Tailwind 4 · shadcn/ui · Recharts
 - **Postgres** via Drizzle ORM (`pg` Pool — works with local, self-hosted, or managed Postgres)
 - **Auth.js v5** credentials (email/password, JWT sessions), route protection via `src/proxy.ts`
-- **Documents**: AES-256-GCM encrypted before storage; Vercel Blob when
-  `BLOB_READ_WRITE_TOKEN` is set, local `./storage` dir otherwise
+- **Documents**: AES-256-GCM encrypted before storage; durable host filesystem in
+  production and local `./storage` during development
 - **Extraction**: OpenAI Responses API (PDF/image input, strict JSON schema) when
   `OPENAI_API_KEY` is set; deterministic **mock provider** otherwise so the whole flow
   works offline
@@ -56,7 +56,7 @@ the upload flow.
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | Postgres connection string (local or Neon) |
+| `DATABASE_URL` | Postgres connection string |
 | `HEALTH_BRIDGE_DATABASE_HOST` | Tailnet-only PostgreSQL hostname shown to Health Bridge profiles |
 | `HEALTH_BRIDGE_DATABASE_PORT` | Tailnet PostgreSQL port (defaults to `5432`) |
 | `HEALTH_BRIDGE_DATABASE_NAME` | PostgreSQL database shown to Health Bridge profiles |
@@ -66,9 +66,9 @@ the upload flow.
 | `DOCUMENT_ENCRYPTION_KEY` | 32-byte hex master key for AES-256-GCM (`openssl rand -hex 32`) |
 | `OPENAI_API_KEY` | Enables real extraction + AI Q&A (otherwise mock provider) |
 | `OPENAI_MODEL` | Optional, defaults to `gpt-4o` |
-| `BLOB_READ_WRITE_TOKEN` | Enables Vercel Blob storage (otherwise local `./storage`) |
+| `DOCUMENT_STORAGE_DIR` | Encrypted document storage path (defaults to `./storage`; `/app/storage` in Docker) |
 | `EXTRACTION_PROVIDER` | Set to `mock` to force the mock provider even with a key |
-| `CRON_SECRET` | Bearer secret used by Vercel Cron to drain queued/stale extraction jobs |
+| `CRON_SECRET` | Bearer secret for the extraction queue recovery endpoint |
 | `SEED_USER_EMAIL/PASSWORD/NAME` | Seed account, used by `npm run db:seed` |
 
 ## Docker Compose (Hetzner / self-hosted)
@@ -108,8 +108,8 @@ Important overrides for a real server:
 - Set `POSTGRES_SSL=on` and `POSTGRES_TLS_DIR=/var/lib/hearth/postgres-tls` after installing the Tailscale certificate renewal service below
 - Optionally set `OPENAI_API_KEY` if you want real extraction/Q&A instead of the mock provider
 
-By default Docker Compose uses local disk storage at `/app/storage`, so no Blob/Neon
-dependency is required. In the provided compose file, `/app/storage` is backed by
+Docker Compose uses local disk storage at `/app/storage`. In the provided compose file,
+`/app/storage` is backed by
 `${HEARTH_STORAGE_DIR:-/mnt/storagebox/hearth/storage}` so uploads live on your
 Hetzner Storage Box mount by default.
 
@@ -142,17 +142,14 @@ openssl s_client -starttls postgres \
   -servername hetzner-docker.tail95d995.ts.net </dev/null
 ```
 
-## Deploying to Vercel
+## Production deployment
 
-1. Create a Vercel project and link this repo (`vercel link`).
-2. Provision **Neon Postgres** and **Vercel Blob** from the Vercel Marketplace/Storage tab —
-   this injects `DATABASE_URL` and `BLOB_READ_WRITE_TOKEN`.
-3. Add `AUTH_SECRET`, `DOCUMENT_ENCRYPTION_KEY`, `OPENAI_API_KEY`, and `CRON_SECRET` as env vars.
-4. Run the schema push + seed once against the Neon URL:
-   `DATABASE_URL=postgres://…neon… npm run db:push && DATABASE_URL=… npm run db:seed`
-5. `vercel deploy --prod`.
+Production runs as Docker containers on the `hetzner-docker` SSH host. See
+[DEPLOYMENT.md](./DEPLOYMENT.md) for initial setup, deployment, verification, backup,
+and rollback instructions.
 
-Keep `DOCUMENT_ENCRYPTION_KEY` safe — encrypted documents are unreadable without it.
+Keep `DOCUMENT_ENCRYPTION_KEY` safe and backed up separately — encrypted documents are
+unreadable without it.
 
 ## Architecture notes
 
@@ -180,7 +177,7 @@ Keep `DOCUMENT_ENCRYPTION_KEY` safe — encrypted documents are unreadable witho
 src/db/            schema (users, profiles, documents, extraction_jobs,
                    extracted_items, observations, observation_types,
                    clinical_reports, ai_context_logs, audit_logs), seed
-src/lib/           auth, crypto (AES-GCM), storage (Blob/disk)
+src/lib/           auth, crypto (AES-GCM), filesystem storage
 src/lib/health/    series logic, system registry, overview/system/metric loaders
 src/lib/extraction openai + mock providers, canonical test mapping
 src/lib/ai/        context builder, PII redaction, answer providers

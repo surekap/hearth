@@ -4,7 +4,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { encryptBuffer, sha256Hex } from "@/lib/crypto";
-import { extractionResultSchema, type ExtractionResult } from "@/lib/extraction/schemas";
+import { extractionResultSchema } from "@/lib/extraction/schemas";
+import { extractionItemsFromResult } from "@/lib/extraction/items";
 import { getProfileAccess } from "@/lib/profile-access";
 import { putObject } from "@/lib/storage";
 
@@ -256,79 +257,6 @@ export async function latestExtractionJob(documentId: string) {
   });
 }
 
-function extractionItemsFromResult({
-  result,
-  jobId,
-  profileId,
-}: {
-  result: ExtractionResult;
-  jobId: string;
-  profileId: string;
-}) {
-  const itemValues: (typeof schema.extractedItems.$inferInsert)[] = [];
-  for (const obs of result.observations) {
-    itemValues.push({
-      extractionJobId: jobId,
-      profileId,
-      itemType: "lab_observation",
-      status: "draft",
-      rawJson: { ...obs, report_date: result.report_date },
-      confidence: obs.confidence,
-    });
-  }
-  for (const med of result.medications) {
-    itemValues.push({
-      extractionJobId: jobId,
-      profileId,
-      itemType: "medication",
-      status: "draft",
-      rawJson: { ...med, report_date: result.report_date },
-      confidence: med.confidence,
-    });
-  }
-  for (const variant of result.genetic_variants) {
-    itemValues.push({
-      extractionJobId: jobId,
-      profileId,
-      itemType: "genetic_variant",
-      status: "draft",
-      rawJson: { ...variant, genetic_report: result.genetic_report, report_date: result.report_date },
-      confidence: variant.confidence,
-    });
-  }
-  for (const risk of result.genetic_risks) {
-    itemValues.push({
-      extractionJobId: jobId,
-      profileId,
-      itemType: risk.category === "trait" ? "genetic_trait" : "genetic_risk",
-      status: "draft",
-      rawJson: { ...risk, genetic_report: result.genetic_report, report_date: result.report_date },
-      confidence: risk.confidence,
-    });
-  }
-  for (const pgx of result.pharmacogenomics) {
-    itemValues.push({
-      extractionJobId: jobId,
-      profileId,
-      itemType: "pharmacogenomic_result",
-      status: "draft",
-      rawJson: { ...pgx, genetic_report: result.genetic_report, report_date: result.report_date },
-      confidence: pgx.confidence,
-    });
-  }
-  if (result.report) {
-    itemValues.push({
-      extractionJobId: jobId,
-      profileId,
-      itemType: "report_summary",
-      status: "draft",
-      rawJson: { ...result.report, report_date: result.report_date },
-      confidence: result.report.confidence,
-    });
-  }
-  return itemValues;
-}
-
 export async function submitExternalExtraction({
   documentId,
   userId,
@@ -372,6 +300,9 @@ export async function submitExternalExtraction({
         modelUsed: modelUsed ?? "external-mcp-client",
         promptVersion: promptVersion ?? "external",
         piiRedacted: false,
+        warnings: result.warnings,
+        uncertainItems: result.uncertain_items,
+        coverageJson: result.coverage,
         completedAt: new Date(),
       })
       .returning();

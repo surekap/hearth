@@ -11,7 +11,7 @@ The first version is **not a doctor replacement**. It is a structured personal h
 Start with:
 
 ```text
-Next.js PWA on Vercel
+Next.js PWA in a self-hosted Docker container
 Postgres database
 Encrypted object storage for PDFs/images
 Server-side OCR + LLM extraction
@@ -1098,7 +1098,7 @@ Next.js route handlers initially
 Postgres
 Prisma or Drizzle
 Background jobs via Inngest / Trigger.dev / QStash
-Object storage: S3-compatible / Vercel Blob / Cloudflare R2
+Object storage: encrypted host filesystem with durable off-host backups
 OCR: Google Document AI / Azure OCR / Tesseract fallback
 LLM: OpenAI / Anthropic structured JSON extraction
 ```

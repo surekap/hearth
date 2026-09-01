@@ -11,6 +11,14 @@ import { formatMetricNumber, RANGES, RANGE_LABELS } from "@/lib/health/series";
 import type { SystemPageData } from "@/lib/health/system";
 import { cn } from "@/lib/utils";
 
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 function interpBadge(interpretation: string) {
   if (interpretation === "high" || interpretation === "critical") {
     return <Badge className="bg-destructive/10 text-destructive">{interpretation}</Badge>;
@@ -148,6 +156,50 @@ export function SystemView({ data }: { data: SystemPageData }) {
           </div>
         </div>
       </div>
+
+      {data.recentImports.length > 0 && (
+        <section className="grid gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Recently imported</h2>
+            <p className="text-sm text-muted-foreground">
+              New values appear here by import date. Trends keep the original clinical date.
+            </p>
+          </div>
+          <Card className="py-1">
+            <CardContent className="divide-y px-0">
+              {data.recentImports.map((row) => (
+                <Link
+                  key={row.id}
+                  href={`/metrics/${row.typeId}?range=${data.range}`}
+                  className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-muted/40"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{row.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      Imported {fmtDate(row.importedAt)} · Clinical date {fmtDate(row.observedAt)}
+                      {" · "}
+                      {row.documentName}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="text-sm font-semibold tabular-nums">
+                      {row.valueNumeric != null
+                        ? formatMetricNumber(row.valueNumeric, row.unit)
+                        : (row.valueText ?? "—")}
+                      {row.unit && (
+                        <span className="ml-1 text-xs font-normal text-muted-foreground">
+                          {row.unit}
+                        </span>
+                      )}
+                    </span>
+                    <ChevronRight className="size-4 text-muted-foreground" />
+                  </span>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {data.keyCharts.filter((c) => c.series.points.length >= 2).length > 0 && (
         <section className="grid gap-3">

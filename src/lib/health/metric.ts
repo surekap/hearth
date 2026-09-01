@@ -35,7 +35,10 @@ export type MetricIndexRow = {
 };
 
 /** Latest confirmed value + total count for every metric type with data. */
-export async function getMetricIndex(profileId: string): Promise<MetricIndexRow[]> {
+export async function getMetricIndex(
+  profileId: string,
+  options: { documentId?: string; labOnly?: boolean } = {}
+): Promise<MetricIndexRow[]> {
   const result = await db.execute(sql`
     select distinct on (o.observation_type_id)
       ot.id as type_id,
@@ -52,6 +55,8 @@ export async function getMetricIndex(profileId: string): Promise<MetricIndexRow[
     join observation_types ot on ot.id = o.observation_type_id
     where o.profile_id = ${profileId}
       and o.status = 'confirmed'
+      ${options.documentId ? sql`and o.document_id = ${options.documentId}` : sql``}
+      ${options.labOnly ? sql`and coalesce(o.metadata_json->>'kind', '') <> 'diagnostic_measurement'` : sql``}
       and not (
         ot.canonical_name in ('BMI', 'Body Fat Percentage', 'Height', 'Lean Body Mass', 'Weight')
         and o.value_numeric is not null
@@ -167,6 +172,11 @@ type RawRow = {
   interpretation: Interpretation;
 };
 
+const HEALTH_DATA_TIME_ZONE =
+  process.env.HEALTH_DATA_TIME_ZONE ??
+  process.env.HEALTH_BRIDGE_TIMEZONE ??
+  "Asia/Kolkata";
+
 async function loadRawRows(profileId: string, typeId: string, start: Date | null) {
   const conditions = [
     eq(schema.observations.profileId, profileId),
@@ -199,7 +209,10 @@ async function loadRollupBuckets(
   // with 40 readings counts more than a day with 2.
   const result = await db.execute(sql`
     select
-      date_trunc(${period}, period_start) as bucket,
+      (
+        date_trunc(${period}, period_start at time zone ${HEALTH_DATA_TIME_ZONE})
+        at time zone ${HEALTH_DATA_TIME_ZONE}
+      ) as bucket,
       sum(case when aggregation = 'daily_avg' then value_numeric * greatest(source_observation_count, 1) end)
         / nullif(sum(case when aggregation = 'daily_avg' then greatest(source_observation_count, 1) end), 0) as avg_value,
       sum(case when aggregation = 'daily_sum' then value_numeric end) as sum_value,

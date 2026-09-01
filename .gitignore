@@ -35,9 +35,6 @@ yarn-error.log*
 .env*
 DOCUMENT_ENCRYPTION_KEY
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts
@@ -48,3 +45,7 @@ next-env.d.ts
 # Local working assets (duplicated in public/images) and design inspiration
 /images/
 /ui-ideas/
+
+.playwright-cli/**
+graphify-out/**
+output/**

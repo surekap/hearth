@@ -31,6 +31,10 @@ export async function POST(
       .set({ status: "rejected" })
       .where(eq(schema.extractionJobs.id, job.id));
     await db
+      .update(schema.clinicalImages)
+      .set({ status: "rejected" })
+      .where(eq(schema.clinicalImages.extractionJobId, job.id));
+    await db
       .update(schema.documents)
       .set({ extractionStatus: "rejected" })
       .where(eq(schema.documents.id, job.documentId));

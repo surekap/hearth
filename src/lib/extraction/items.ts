@@ -1,0 +1,110 @@
+import type { schema } from "@/db";
+import type { ExtractionResult } from "./schemas";
+
+type ExtractedItemInsert = typeof schema.extractedItems.$inferInsert;
+
+export function extractionItemsFromResult({
+  result,
+  jobId,
+  profileId,
+}: {
+  result: ExtractionResult;
+  jobId: string;
+  profileId: string;
+}): ExtractedItemInsert[] {
+  const items: ExtractedItemInsert[] = [];
+
+  for (const observation of result.observations) {
+    items.push({
+      extractionJobId: jobId,
+      profileId,
+      itemType: "lab_observation",
+      status: "draft",
+      rawJson: observation,
+      confidence: observation.confidence,
+    });
+  }
+
+  for (const [reportIndex, report] of result.reports.entries()) {
+    const reportDate = report.report_date ?? result.report_date;
+    items.push({
+      extractionJobId: jobId,
+      profileId,
+      itemType: "report_summary",
+      status: "draft",
+      rawJson: { ...report, report_index: reportIndex, report_date: reportDate },
+      confidence: report.confidence,
+    });
+
+    for (const measurement of report.measurements) {
+      items.push({
+        extractionJobId: jobId,
+        profileId,
+        itemType: "diagnostic_measurement",
+        status: "draft",
+        rawJson: {
+          ...measurement,
+          test_name: measurement.name,
+          report_index: reportIndex,
+          report_date: reportDate,
+          study_name: report.study_name,
+          report_type: report.report_type,
+          modality: report.modality,
+          page_start: report.page_start,
+          page_end: report.page_end,
+        },
+        confidence: measurement.confidence,
+      });
+    }
+  }
+
+  for (const medication of result.medications) {
+    items.push({
+      extractionJobId: jobId,
+      profileId,
+      itemType: "medication",
+      status: "draft",
+      rawJson: { ...medication, report_date: result.report_date },
+      confidence: medication.confidence,
+    });
+  }
+
+  for (const variant of result.genetic_variants) {
+    items.push({
+      extractionJobId: jobId,
+      profileId,
+      itemType: "genetic_variant",
+      status: "draft",
+      rawJson: { ...variant, genetic_report: result.genetic_report, report_date: result.report_date },
+      confidence: variant.confidence,
+    });
+  }
+
+  for (const risk of result.genetic_risks) {
+    items.push({
+      extractionJobId: jobId,
+      profileId,
+      itemType: risk.category === "trait" ? "genetic_trait" : "genetic_risk",
+      status: "draft",
+      rawJson: { ...risk, genetic_report: result.genetic_report, report_date: result.report_date },
+      confidence: risk.confidence,
+    });
+  }
+
+  for (const resultRow of result.pharmacogenomics) {
+    items.push({
+      extractionJobId: jobId,
+      profileId,
+      itemType: "pharmacogenomic_result",
+      status: "draft",
+      rawJson: {
+        ...resultRow,
+        genetic_report: result.genetic_report,
+        report_date: result.report_date,
+      },
+      confidence: resultRow.confidence,
+    });
+  }
+
+  return items;
+}

@@ -34,10 +34,16 @@ export function MetricsIndexView({
   profileId,
   index,
   allTypes,
+  filter,
 }: {
   profileId: string;
   index: MetricIndexRow[];
   allTypes: ObsType[];
+  filter?: {
+    documentId: string;
+    documentName: string;
+    scope: "lab" | "all";
+  };
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -94,13 +100,22 @@ export function MetricsIndexView({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Badge className="mb-2 bg-accent text-accent-foreground" variant="secondary">
-            Measurements
+            {filter?.scope === "lab" ? "Imported lab results" : "Measurements"}
           </Badge>
-          <h1 className="text-3xl font-semibold">All measurements</h1>
+          <h1 className="text-3xl font-semibold">
+            {filter?.scope === "lab" ? "Lab results" : "All measurements"}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Every confirmed value, searchable. Open any measurement for its full history.
+            {filter
+              ? `${index.length.toLocaleString("en-IN")} confirmed ${filter.scope === "lab" ? "lab tests" : "measurements"} from ${filter.documentName}.`
+              : "Every confirmed value, searchable. Open any measurement for its full history."}
           </p>
         </div>
+        {filter ? (
+          <Button asChild variant="outline">
+            <Link href="/metrics">Show all measurements</Link>
+          </Button>
+        ) : (
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -160,13 +175,14 @@ export function MetricsIndexView({
             </div>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search measurements or categories…"
+          placeholder={filter?.scope === "lab" ? "Search this lab report…" : "Search measurements or categories…"}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />

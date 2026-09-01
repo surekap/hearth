@@ -1,9 +1,32 @@
 import { z } from "zod";
 
-export const PROMPT_VERSION = "v2";
+export const PROMPT_VERSION = "v6";
+
+export const diagnosticCategoryValues = [
+  "body",
+  "cardiovascular",
+  "respiratory",
+  "cardiac",
+  "mobility",
+  "other",
+] as const;
 
 export const extractedObservationSchema = z.object({
   test_name: z.string(),
+  canonical_name: z.string().nullable(),
+  report_date: z.string().nullable(),
+  value: z.number().nullable(),
+  value_text: z.string().nullable(),
+  unit: z.string().nullable(),
+  reference_low: z.number().nullable(),
+  reference_high: z.number().nullable(),
+  interpretation: z.enum(["low", "normal", "high", "critical", "unknown"]),
+  page_number: z.number().int().positive().nullable(),
+  confidence: z.number().min(0).max(1),
+});
+
+export const extractedDiagnosticMeasurementSchema = z.object({
+  name: z.string(),
   canonical_name: z.string().nullable(),
   value: z.number().nullable(),
   value_text: z.string().nullable(),
@@ -11,10 +34,15 @@ export const extractedObservationSchema = z.object({
   reference_low: z.number().nullable(),
   reference_high: z.number().nullable(),
   interpretation: z.enum(["low", "normal", "high", "critical", "unknown"]),
+  category: z.enum(diagnosticCategoryValues),
+  page_number: z.number().int().positive().nullable(),
   confidence: z.number().min(0).max(1),
 });
 
 export const extractedReportSchema = z.object({
+  study_name: z.string(),
+  report_type: z.enum(["imaging", "specialist", "procedure", "discharge", "other"]),
+  report_date: z.string().nullable(),
   modality: z.string().nullable(),
   body_part: z.string().nullable(),
   specialty: z.string().nullable(),
@@ -24,7 +52,18 @@ export const extractedReportSchema = z.object({
   impression: z.string().nullable(),
   summary: z.string().nullable(),
   follow_up_recommended: z.boolean(),
+  page_start: z.number().int().positive().nullable(),
+  page_end: z.number().int().positive().nullable(),
+  measurements: z.array(extractedDiagnosticMeasurementSchema),
   confidence: z.number().min(0).max(1),
+});
+
+export const extractionCoverageSchema = z.object({
+  pages_total: z.number().int().positive(),
+  pages_processed: z.number().int().nonnegative(),
+  sections_detected: z.number().int().nonnegative(),
+  sections_extracted: z.number().int().nonnegative(),
+  unmatched_pages: z.array(z.number().int().positive()),
 });
 
 export const extractedMedicationSchema = z.object({
@@ -84,7 +123,7 @@ export const extractedPharmacogenomicResultSchema = z.object({
   confidence: z.number().min(0).max(1),
 });
 
-export const extractionResultSchema = z.object({
+const extractionResultV3Schema = z.object({
   document_type: z.enum([
     "lab_report",
     "prescription",
@@ -100,18 +139,91 @@ export const extractionResultSchema = z.object({
   patient_name: z.string().nullable(),
   raw_text: z.string(),
   observations: z.array(extractedObservationSchema),
-  report: extractedReportSchema.nullable(),
+  reports: z.array(extractedReportSchema),
   medications: z.array(extractedMedicationSchema),
   genetic_report: extractedGeneticReportSchema.nullable(),
   genetic_variants: z.array(extractedGeneticVariantSchema),
   genetic_risks: z.array(extractedGeneticRiskSchema),
   pharmacogenomics: z.array(extractedPharmacogenomicResultSchema),
+  coverage: extractionCoverageSchema,
   warnings: z.array(z.string()),
   uncertain_items: z.array(z.string()),
 });
 
+function upgradeLegacyExtraction(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const input = value as Record<string, unknown>;
+  const observations = Array.isArray(input.observations)
+    ? input.observations.map((observation) =>
+        observation && typeof observation === "object"
+          ? {
+              page_number: null,
+              report_date: input.report_date ?? null,
+              ...(observation as Record<string, unknown>),
+            }
+          : observation
+      )
+    : input.observations;
+  const legacyReport =
+    input.report && typeof input.report === "object"
+      ? [input.report as Record<string, unknown>]
+      : [];
+  const sourceReports = Array.isArray(input.reports) ? input.reports : legacyReport;
+  const reports = sourceReports.map((report, index) => {
+    if (!report || typeof report !== "object") return report;
+    const row = report as Record<string, unknown>;
+    return {
+      study_name: row.study_name ?? row.modality ?? `Clinical report ${index + 1}`,
+      report_type: row.report_type ?? "other",
+      report_date: row.report_date ?? input.report_date ?? null,
+      page_start: row.page_start ?? null,
+      page_end: row.page_end ?? null,
+      measurements: row.measurements ?? [],
+      ...row,
+    };
+  });
+  const knownPages = [
+    ...reports.flatMap((report) => {
+      if (!report || typeof report !== "object") return [];
+      const row = report as Record<string, unknown>;
+      return [row.page_start, row.page_end].filter((page): page is number => typeof page === "number");
+    }),
+    ...(Array.isArray(observations)
+      ? observations.flatMap((observation) => {
+          if (!observation || typeof observation !== "object") return [];
+          const page = (observation as Record<string, unknown>).page_number;
+          return typeof page === "number" ? [page] : [];
+        })
+      : []),
+  ];
+  const pagesTotal = Math.max(1, ...knownPages);
+  const { report: _legacyReport, ...rest } = input;
+  void _legacyReport;
+  return {
+    ...rest,
+    observations,
+    reports,
+    coverage: input.coverage ?? {
+      pages_total: pagesTotal,
+      pages_processed: pagesTotal,
+      sections_detected: reports.length + (Array.isArray(observations) && observations.length ? 1 : 0),
+      sections_extracted: reports.length + (Array.isArray(observations) && observations.length ? 1 : 0),
+      unmatched_pages: [],
+    },
+  };
+}
+
+export const extractionResultSchema = z.preprocess(
+  upgradeLegacyExtraction,
+  extractionResultV3Schema
+);
+
 export type ExtractionResult = z.infer<typeof extractionResultSchema>;
 export type ExtractedObservation = z.infer<typeof extractedObservationSchema>;
+export type ExtractedReport = z.infer<typeof extractedReportSchema>;
+export type ExtractedDiagnosticMeasurement = z.infer<
+  typeof extractedDiagnosticMeasurementSchema
+>;
 
 /** OpenAI strict structured-output JSON schema mirroring extractionResultSchema. */
 export const OPENAI_JSON_SCHEMA = {
@@ -124,12 +236,13 @@ export const OPENAI_JSON_SCHEMA = {
     "patient_name",
     "raw_text",
     "observations",
-    "report",
+    "reports",
     "medications",
     "genetic_report",
     "genetic_variants",
     "genetic_risks",
     "pharmacogenomics",
+    "coverage",
     "warnings",
     "uncertain_items",
   ],
@@ -165,12 +278,14 @@ export const OPENAI_JSON_SCHEMA = {
         required: [
           "test_name",
           "canonical_name",
+          "report_date",
           "value",
           "value_text",
           "unit",
           "reference_low",
           "reference_high",
           "interpretation",
+          "page_number",
           "confidence",
         ],
         properties: {
@@ -178,6 +293,10 @@ export const OPENAI_JSON_SCHEMA = {
           canonical_name: {
             type: ["string", "null"],
             description: "Standardized test name, e.g. ALT for SGPT",
+          },
+          report_date: {
+            type: ["string", "null"],
+            description: "ISO date YYYY-MM-DD for this result's own source page",
           },
           value: { type: ["number", "null"] },
           value_text: {
@@ -191,36 +310,100 @@ export const OPENAI_JSON_SCHEMA = {
             type: "string",
             enum: ["low", "normal", "high", "critical", "unknown"],
           },
+          page_number: { type: ["integer", "null"] },
           confidence: { type: "number" },
         },
       },
     },
-    report: {
-      type: ["object", "null"],
-      additionalProperties: false,
-      required: [
-        "modality",
-        "body_part",
-        "specialty",
-        "facility",
-        "doctor_name",
-        "findings",
-        "impression",
-        "summary",
-        "follow_up_recommended",
-        "confidence",
-      ],
-      properties: {
-        modality: { type: ["string", "null"] },
-        body_part: { type: ["string", "null"] },
-        specialty: { type: ["string", "null"] },
-        facility: { type: ["string", "null"] },
-        doctor_name: { type: ["string", "null"] },
-        findings: { type: "array", items: { type: "string" } },
-        impression: { type: ["string", "null"] },
-        summary: { type: ["string", "null"] },
-        follow_up_recommended: { type: "boolean" },
-        confidence: { type: "number" },
+    reports: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "study_name",
+          "report_type",
+          "report_date",
+          "modality",
+          "body_part",
+          "specialty",
+          "facility",
+          "doctor_name",
+          "findings",
+          "impression",
+          "summary",
+          "follow_up_recommended",
+          "page_start",
+          "page_end",
+          "measurements",
+          "confidence",
+        ],
+        properties: {
+          study_name: { type: "string" },
+          report_type: {
+            type: "string",
+            enum: ["imaging", "specialist", "procedure", "discharge", "other"],
+          },
+          report_date: { type: ["string", "null"] },
+          modality: { type: ["string", "null"] },
+          body_part: { type: ["string", "null"] },
+          specialty: { type: ["string", "null"] },
+          facility: { type: ["string", "null"] },
+          doctor_name: { type: ["string", "null"] },
+          findings: { type: "array", items: { type: "string" } },
+          impression: { type: ["string", "null"] },
+          summary: { type: ["string", "null"] },
+          follow_up_recommended: { type: "boolean" },
+          page_start: { type: ["integer", "null"] },
+          page_end: { type: ["integer", "null"] },
+          measurements: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: [
+                "name",
+                "canonical_name",
+                "value",
+                "value_text",
+                "unit",
+                "reference_low",
+                "reference_high",
+                "interpretation",
+                "category",
+                "page_number",
+                "confidence",
+              ],
+              properties: {
+                name: { type: "string" },
+                canonical_name: { type: ["string", "null"] },
+                value: { type: ["number", "null"] },
+                value_text: { type: ["string", "null"] },
+                unit: { type: ["string", "null"] },
+                reference_low: { type: ["number", "null"] },
+                reference_high: { type: ["number", "null"] },
+                interpretation: {
+                  type: "string",
+                  enum: ["low", "normal", "high", "critical", "unknown"],
+                },
+                category: {
+                  type: "string",
+                  enum: [
+                    "body",
+                    "cardiovascular",
+                    "respiratory",
+                    "cardiac",
+                    "mobility",
+                    "other",
+                  ],
+                },
+                page_number: { type: ["integer", "null"] },
+                confidence: { type: "number" },
+              },
+            },
+          },
+          confidence: { type: "number" },
+        },
       },
     },
     medications: {
@@ -359,6 +542,24 @@ export const OPENAI_JSON_SCHEMA = {
           evidence_level: { type: ["string", "null"] },
           confidence: { type: "number" },
         },
+      },
+    },
+    coverage: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "pages_total",
+        "pages_processed",
+        "sections_detected",
+        "sections_extracted",
+        "unmatched_pages",
+      ],
+      properties: {
+        pages_total: { type: "integer" },
+        pages_processed: { type: "integer" },
+        sections_detected: { type: "integer" },
+        sections_extracted: { type: "integer" },
+        unmatched_pages: { type: "array", items: { type: "integer" } },
       },
     },
     warnings: { type: "array", items: { type: "string" } },

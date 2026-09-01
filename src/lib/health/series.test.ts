@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   attentionState,
   downsampleEven,
+  formatMetricDisplay,
   formatMetricValue,
   rangeStart,
   rawSeries,
@@ -139,6 +140,14 @@ describe("formatMetricValue", () => {
     expect(formatMetricValue(20.991, "ms")).toBe("21 ms");
     expect(formatMetricValue(5.73, null)).toBe("5.73");
     expect(formatMetricValue(0.97)).toBe("0.97");
+  });
+});
+
+describe("formatMetricDisplay", () => {
+  it("renders qualitative canonical measurements without numeric formatting", () => {
+    expect(formatMetricDisplay(null, "Normal sinus rhythm", null)).toBe(
+      "Normal sinus rhythm"
+    );
   });
 });
 

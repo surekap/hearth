@@ -4,6 +4,8 @@ import { decryptBuffer } from "@/lib/crypto";
 import { getObject } from "@/lib/storage";
 import { extractWithOpenAI, type ProviderOutput } from "./openai";
 import { extractWithMock } from "./mock";
+import { extractionItemsFromResult } from "./items";
+import { extractClinicalImages } from "./clinical-images";
 import { extractionProviderName } from "./provider";
 export { extractionProviderName } from "./provider";
 
@@ -113,10 +115,10 @@ export async function processExtractionJob(jobId: string): Promise<ProcessResult
       filename: doc.originalFilename,
     });
 
+    const encrypted = await getObject(doc.storageKey);
+    const plainDocument = decryptBuffer(encrypted);
     let output: ProviderOutput;
     if (provider === "openai") {
-      const encrypted = await getObject(doc.storageKey);
-      const buffer = decryptBuffer(encrypted);
       const controller = new AbortController();
       const timeout = setTimeout(
         () => controller.abort("Extraction exceeded 4 minutes."),
@@ -124,7 +126,7 @@ export async function processExtractionJob(jobId: string): Promise<ProcessResult
       );
       try {
         output = await extractWithOpenAI({
-          buffer,
+          buffer: plainDocument,
           mimeType: doc.mimeType,
           filename: doc.originalFilename,
           documentTypeHint: doc.documentType,
@@ -150,68 +152,37 @@ export async function processExtractionJob(jobId: string): Promise<ProcessResult
       confidence: null,
     });
 
-    // Draft items: one per lab observation, medication, and report summary.
-    const itemValues: (typeof schema.extractedItems.$inferInsert)[] = [];
-    for (const obs of result.observations) {
-      itemValues.push({
-        extractionJobId: job.id,
-        profileId: doc.profileId,
-        itemType: "lab_observation",
-        status: "draft",
-        rawJson: { ...obs, report_date: result.report_date },
-        confidence: obs.confidence,
+    try {
+      const imageCount = await extractClinicalImages({
+        doc,
+        jobId: job.id,
+        result,
+        plainDocument,
+      });
+      if (imageCount > 0) {
+        console.log("clinical image extraction completed", {
+          documentId: doc.id,
+          jobId: job.id,
+          imageCount,
+        });
+      }
+    } catch (error) {
+      const warning = `Diagnostic image preservation failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      result.warnings.push(warning);
+      console.error("clinical image extraction failed", {
+        documentId: doc.id,
+        jobId: job.id,
+        error,
       });
     }
-    for (const med of result.medications) {
-      itemValues.push({
-        extractionJobId: job.id,
-        profileId: doc.profileId,
-        itemType: "medication",
-        status: "draft",
-        rawJson: { ...med, report_date: result.report_date },
-        confidence: med.confidence,
-      });
-    }
-    for (const variant of result.genetic_variants) {
-      itemValues.push({
-        extractionJobId: job.id,
-        profileId: doc.profileId,
-        itemType: "genetic_variant",
-        status: "draft",
-        rawJson: { ...variant, genetic_report: result.genetic_report, report_date: result.report_date },
-        confidence: variant.confidence,
-      });
-    }
-    for (const risk of result.genetic_risks) {
-      itemValues.push({
-        extractionJobId: job.id,
-        profileId: doc.profileId,
-        itemType: risk.category === "trait" ? "genetic_trait" : "genetic_risk",
-        status: "draft",
-        rawJson: { ...risk, genetic_report: result.genetic_report, report_date: result.report_date },
-        confidence: risk.confidence,
-      });
-    }
-    for (const pgx of result.pharmacogenomics) {
-      itemValues.push({
-        extractionJobId: job.id,
-        profileId: doc.profileId,
-        itemType: "pharmacogenomic_result",
-        status: "draft",
-        rawJson: { ...pgx, genetic_report: result.genetic_report, report_date: result.report_date },
-        confidence: pgx.confidence,
-      });
-    }
-    if (result.report) {
-      itemValues.push({
-        extractionJobId: job.id,
-        profileId: doc.profileId,
-        itemType: "report_summary",
-        status: "draft",
-        rawJson: { ...result.report, report_date: result.report_date },
-        confidence: result.report.confidence,
-      });
-    }
+
+    const itemValues = extractionItemsFromResult({
+      result,
+      jobId: job.id,
+      profileId: doc.profileId,
+    });
     if (itemValues.length > 0) {
       await db.insert(schema.extractedItems).values(itemValues);
     }
@@ -236,6 +207,9 @@ export async function processExtractionJob(jobId: string): Promise<ProcessResult
         promptVersion: output.promptVersion,
         inputTokenCount: output.inputTokens,
         outputTokenCount: output.outputTokens,
+        warnings: result.warnings,
+        uncertainItems: result.uncertain_items,
+        coverageJson: result.coverage,
         completedAt: new Date(),
       })
       .where(eq(schema.extractionJobs.id, job.id));

@@ -68,7 +68,8 @@ export const OBSERVATION_TYPE_SEEDS: ObservationTypeSeed[] = [
   { canonicalName: "ESR", aliases: ["Erythrocyte Sedimentation Rate", "Sed Rate"], category: "inflammation", loincCode: "30341-2", normalUnit: "mm/hr", description: "Erythrocyte sedimentation rate" },
   // Renal
   { canonicalName: "Creatinine", aliases: ["Serum Creatinine", "S. Creatinine"], category: "renal", loincCode: "2160-0", normalUnit: "mg/dL", description: "Serum creatinine" },
-  { canonicalName: "Urea", aliases: ["Blood Urea", "BUN", "Blood Urea Nitrogen"], category: "renal", loincCode: "3094-0", normalUnit: "mg/dL", description: "Blood urea" },
+  { canonicalName: "Urea", aliases: ["Serum Urea"], category: "renal", loincCode: "3091-6", normalUnit: "mg/dL", description: "Urea mass concentration" },
+  { canonicalName: "Blood Urea Nitrogen", aliases: ["BUN", "Urea Nitrogen"], category: "renal", loincCode: "3094-0", normalUnit: "mg/dL", description: "Blood urea nitrogen" },
   { canonicalName: "Uric Acid", aliases: ["Serum Uric Acid", "S. Uric Acid"], category: "renal", loincCode: "3084-1", normalUnit: "mg/dL", description: "Serum uric acid" },
   { canonicalName: "eGFR", aliases: ["Estimated GFR", "Glomerular Filtration Rate"], category: "renal", loincCode: "62238-1", normalUnit: "mL/min/1.73m²", description: "Estimated glomerular filtration rate" },
   { canonicalName: "Sodium", aliases: ["Serum Sodium", "Na", "Na+"], category: "renal", loincCode: "2951-2", normalUnit: "mmol/L", description: "Serum sodium" },
@@ -318,6 +319,33 @@ export const OBSERVATION_TYPE_SEEDS: ObservationTypeSeed[] = [
   { canonicalName: "Widal H Antigen", aliases: ["Typhi H", "Salmonella Typhi H"], category: "infectious", normalUnit: "titer", description: "Widal H antigen titer" },
   { canonicalName: "COVID-19 RT-PCR", aliases: ["SARS-CoV-2 RT-PCR", "COVID PCR", "Coronavirus RT PCR"], category: "infectious", normalUnit: "", description: "SARS-CoV-2 RT-PCR" },
   { canonicalName: "COVID-19 IgG", aliases: ["SARS-CoV-2 IgG", "COVID IgG"], category: "infectious", normalUnit: "AU/mL", description: "SARS-CoV-2 IgG antibody" },
+
+  // Common qualitative laboratory rows
+  { canonicalName: "ABO Blood Group", aliases: ["Blood Grouping", "ABO Group", "Blood Group"], category: "hematology", normalUnit: "", description: "ABO blood group" },
+  { canonicalName: "Rh Factor", aliases: ["RH - TYPING", "Rh Typing", "Rhesus Factor"], category: "hematology", normalUnit: "", description: "Rhesus blood group factor" },
+  { canonicalName: "Urine Colour", aliases: ["Urine Color", "Colour", "Color"], category: "urine", normalUnit: "", description: "Visual urine colour" },
+  { canonicalName: "Urine Appearance", aliases: ["Appearance", "Urine Clarity"], category: "urine", normalUnit: "", description: "Visual urine appearance or clarity" },
+  { canonicalName: "Urine Squamous Epithelial Cells", aliases: ["Squamous Epithelial Cells"], category: "urine", normalUnit: "/HPF", description: "Squamous epithelial cells in urine microscopy" },
+
+  // Diagnostic study measurements
+  { canonicalName: "FVC", aliases: ["Forced Vital Capacity"], category: "respiratory", normalUnit: "L", description: "Forced vital capacity" },
+  { canonicalName: "FEV1", aliases: ["Forced Expiratory Volume in 1 Second"], category: "respiratory", normalUnit: "L", description: "Forced expiratory volume in one second" },
+  { canonicalName: "FEV1/FVC", aliases: ["FEV1 FVC Ratio"], category: "respiratory", normalUnit: "%", description: "Ratio of FEV1 to FVC" },
+  { canonicalName: "FEF25-75", aliases: ["FEF 25-75", "Mid Expiratory Flow"], category: "respiratory", normalUnit: "L/s", description: "Forced expiratory flow between 25 and 75 percent of FVC" },
+  { canonicalName: "Peak Expiratory Flow", aliases: ["PEF"], category: "respiratory", normalUnit: "L/s", description: "Peak expiratory flow" },
+  { canonicalName: "Left Ventricular Ejection Fraction", aliases: ["Ejection Fraction", "LVEF", "EF"], category: "cardiac", normalUnit: "%", description: "Left ventricular ejection fraction" },
+  { canonicalName: "Exercise Capacity", aliases: ["METS", "Maximum METS"], category: "cardiovascular", normalUnit: "MET", description: "Exercise capacity in metabolic equivalents" },
+  { canonicalName: "Bone Mineral Density", aliases: ["BMD", "Total Body BMD"], category: "body", normalUnit: "g/cm²", description: "Bone mineral density" },
+  { canonicalName: "Bone Density T-score", aliases: ["T-score", "T Score"], category: "body", normalUnit: "SD", description: "Bone-density T-score" },
+  { canonicalName: "Bone Density Z-score", aliases: ["Z-score", "Z Score"], category: "body", normalUnit: "SD", description: "Bone-density Z-score" },
+  { canonicalName: "Visceral Adipose Tissue Volume", aliases: ["VAT Volume", "VAT"], category: "body", normalUnit: "cm³", description: "Visceral adipose tissue volume" },
+  { canonicalName: "Subcutaneous Adipose Tissue Volume", aliases: ["SAT Volume", "SAT"], category: "body", normalUnit: "cm³", description: "Subcutaneous adipose tissue volume" },
+  { canonicalName: "Android Fat Percentage", aliases: ["Android %Fat", "Android Fat"], category: "body", normalUnit: "%", description: "Android-region fat percentage" },
+  { canonicalName: "Gynoid Fat Percentage", aliases: ["Gynoid %Fat", "Gynoid Fat"], category: "body", normalUnit: "%", description: "Gynoid-region fat percentage" },
+  { canonicalName: "Android/Gynoid Fat Ratio", aliases: ["Android Gynoid Ratio", "Android/Gynoid Ratio"], category: "body", normalUnit: "ratio", description: "Android-to-gynoid fat ratio" },
+  { canonicalName: "Fat Mass", aliases: ["Total Fat Mass"], category: "body", normalUnit: "kg", description: "Total fat mass" },
+  { canonicalName: "Fat-Free Mass", aliases: ["Fat Free Mass"], category: "body", normalUnit: "kg", description: "Total fat-free mass" },
+  { canonicalName: "Bone Mineral Content", aliases: ["BMC"], category: "body", normalUnit: "g", description: "Bone mineral content" },
 
   // Cardiac / Muscle injury
   { canonicalName: "Troponin I", aliases: ["cTnI", "Cardiac Troponin I"], category: "cardiac", normalUnit: "ng/L", description: "Cardiac troponin I" },

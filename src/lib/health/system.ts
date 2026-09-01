@@ -1,4 +1,4 @@
-import { desc, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { getMarkers, type Marker } from "./markers";
 import {
@@ -13,12 +13,18 @@ import {
 } from "./normalization";
 import {
   attentionState,
-  formatMetricValue,
+  formatMetricDisplay,
   rangeStart,
   type MetricSeries,
   type RangeKey,
 } from "./series";
-import { metricBelongsTo, systemFor, type SystemDef } from "./systems";
+import {
+  metricBelongsTo,
+  selectSystemChartMetrics,
+  selectSystemHero,
+  systemFor,
+  type SystemDef,
+} from "./systems";
 
 export type SystemMetricRow = MetricIndexRow & { spark: number[] };
 
@@ -37,6 +43,18 @@ export type SystemPageData = {
     reportDate: string | null;
     summary: string | null;
     followUpRecommended: boolean;
+  }>;
+  recentImports: Array<{
+    id: string;
+    typeId: string;
+    name: string;
+    valueNumeric: number | null;
+    valueText: string | null;
+    unit: string | null;
+    observedAt: string;
+    importedAt: string;
+    documentId: string;
+    documentName: string;
   }>;
   genetics: Array<{ id: string; conditionName: string; riskLevel: string; summary: string | null }>;
   markers: Marker[];
@@ -109,19 +127,17 @@ export async function getSystemData(
     profileId,
     members.map((m) => ({ typeId: m.typeId, name: m.name, unit: m.unit }))
   );
-  const metrics: SystemMetricRow[] = members.map((m) => ({
-    ...m,
-    spark: sparks.get(m.typeId) ?? [],
-  }));
+  const metrics: SystemMetricRow[] = members
+    .map((m) => ({
+      ...m,
+      spark: sparks.get(m.typeId) ?? [],
+    }))
+    .sort(
+      (a, b) =>
+        b.latestDate.localeCompare(a.latestDate) || a.name.localeCompare(b.name)
+    );
 
-  const byName = new Map(members.map((m) => [m.name, m]));
-  const keyRows = def.keyMetrics
-    .map((name) => byName.get(name))
-    .filter(Boolean) as MetricIndexRow[];
-  const chartRows = (keyRows.length > 0 ? keyRows : members.slice(0, KEY_CHART_LIMIT)).slice(
-    0,
-    KEY_CHART_LIMIT
-  );
+  const chartRows = selectSystemChartMetrics(def, members, KEY_CHART_LIMIT);
   const keyCharts = await Promise.all(
     chartRows.map(async (row) => ({
       typeId: row.typeId,
@@ -131,15 +147,49 @@ export async function getSystemData(
     }))
   );
 
-  const heroRow =
-    def.heroMetrics.map((name) => byName.get(name)).find((r) => r && r.latestValue != null) ??
-    members.find((m) => m.latestValue != null) ??
-    null;
+  const recentImportRows = await db
+    .select({
+      id: schema.observations.id,
+      typeId: schema.observations.observationTypeId,
+      name: schema.observationTypes.canonicalName,
+      valueNumeric: schema.observations.valueNumeric,
+      valueText: schema.observations.valueText,
+      unit: schema.observations.unit,
+      observedAt: schema.observations.observedAt,
+      importedAt: schema.observations.createdAt,
+      documentId: schema.documents.id,
+      documentName: schema.documents.originalFilename,
+    })
+    .from(schema.observations)
+    .innerJoin(
+      schema.observationTypes,
+      eq(schema.observations.observationTypeId, schema.observationTypes.id)
+    )
+    .innerJoin(schema.documents, eq(schema.observations.documentId, schema.documents.id))
+    .where(
+      and(
+        eq(schema.observations.profileId, profileId),
+        eq(schema.observations.status, "confirmed"),
+        inArray(
+          schema.observations.observationTypeId,
+          members.map((member) => member.typeId)
+        )
+      )
+    )
+    .orderBy(desc(schema.observations.createdAt))
+    .limit(12);
+  const recentImports = recentImportRows.map((row) => ({
+    ...row,
+    observedAt: row.observedAt.toISOString(),
+    importedAt: row.importedAt.toISOString(),
+  }));
+
+  const heroRow = selectSystemHero(def, members);
   const hero = heroRow
     ? {
         name: heroRow.name,
         typeId: heroRow.typeId,
-        value: formatMetricValue(heroRow.latestValue!, heroRow.unit),
+        value: formatMetricDisplay(heroRow.latestValue, heroRow.latestText, heroRow.unit),
       }
     : null;
 
@@ -205,6 +255,7 @@ export async function getSystemData(
     keyCharts,
     metrics,
     reports,
+    recentImports,
     genetics,
     markers: await getMarkers(profileId, rangeStart(range)),
   };

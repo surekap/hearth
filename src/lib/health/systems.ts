@@ -15,7 +15,8 @@ export type SystemId =
   | "activity"
   | "nutrition"
   | "respiratory"
-  | "immune";
+  | "immune"
+  | "clinical";
 
 export type SystemMedia = {
   image: string;
@@ -33,6 +34,8 @@ export type SystemDef = {
   categories: string[];
   /** Extra canonical names included regardless of category (e.g. DEXA in `body`). */
   metricNames: string[];
+  /** Stable semantic fragments for vendor/model-specific canonical names. */
+  metricTerms?: string[];
   /** Headline metrics charted on the system page, in order. */
   keyMetrics: string[];
   /** First of these with data becomes the overview gallery hero value. */
@@ -80,6 +83,12 @@ export const SYSTEMS: SystemDef[] = [
     metricNames: [],
     keyMetrics: ["Hemoglobin", "WBC Count", "Platelet Count", "RBC Count", "Ferritin"],
     heroMetrics: ["Hemoglobin", "WBC Count"],
+    media: {
+      image: "/images/blood-counts.png",
+      video: "/images/blood-counts.mp4",
+      position: "50% 48%",
+      tone: "dark",
+    },
     geneticTerms: ["anemia", "thalass", "clot", "hemochromatosis", "factor"],
     reportTerms: ["hematol"],
   },
@@ -112,7 +121,12 @@ export const SYSTEMS: SystemDef[] = [
     metricNames: [],
     keyMetrics: ["HbA1c", "Fasting Glucose", "ALT", "AST", "GGT", "TSH", "CRP", "Vitamin D"],
     heroMetrics: ["HbA1c", "ALT", "Fasting Glucose"],
-    media: { image: "/images/liver-metabolism.png", position: "50% 45%", tone: "light" },
+    media: {
+      image: "/images/liver-metabolism.png",
+      video: "/images/liver-metabolism.mp4",
+      position: "50% 45%",
+      tone: "light",
+    },
     geneticTerms: ["diabetes", "liver", "thyroid", "gilbert", "fatty", "metabol"],
     reportTerms: ["gastro", "endocrin", "hepat"],
   },
@@ -126,7 +140,12 @@ export const SYSTEMS: SystemDef[] = [
     metricNames: [],
     keyMetrics: ["Weight", "BMI", "Body Fat Percentage", "Lean Body Mass", "Waist Circumference"],
     heroMetrics: ["Weight", "BMI"],
-    media: { image: "/images/body-composition.png", position: "50% 38%", tone: "light" },
+    media: {
+      image: "/images/body-composition.png",
+      video: "/images/body-composition.mp4",
+      position: "50% 38%",
+      tone: "light",
+    },
     geneticTerms: ["obesity", "weight"],
     reportTerms: [],
   },
@@ -142,8 +161,15 @@ export const SYSTEMS: SystemDef[] = [
       "DEXA total body Z-score",
       "Total body bone mineral content",
     ],
+    metricTerms: ["bone density", "bone mineral", "bmd", "t-score", "z-score", "dexa", "dxa"],
     keyMetrics: ["DEXA total body T-score", "DEXA total body BMD"],
     heroMetrics: ["DEXA total body T-score"],
+    media: {
+      image: "/images/bone-density.png",
+      video: "/images/bone-density.mp4",
+      position: "50% 48%",
+      tone: "dark",
+    },
     geneticTerms: ["osteo", "bone"],
     reportTerms: ["dexa", "ortho"],
   },
@@ -180,6 +206,12 @@ export const SYSTEMS: SystemDef[] = [
       "Walking Steadiness",
     ],
     heroMetrics: ["Exercise Time", "Flights Climbed"],
+    media: {
+      image: "/images/activity-movement.png",
+      video: "/images/activity-movement.mp4",
+      position: "50% 44%",
+      tone: "dark",
+    },
     geneticTerms: ["muscle", "endurance"],
     reportTerms: ["physio", "ortho"],
   },
@@ -199,6 +231,12 @@ export const SYSTEMS: SystemDef[] = [
       "Dietary Sodium",
     ],
     heroMetrics: ["Dietary Energy Consumed"],
+    media: {
+      image: "/images/nutrition.png",
+      video: "/images/nutrition.mp4",
+      position: "50% 45%",
+      tone: "dark",
+    },
     geneticTerms: ["lactose", "celiac", "vitamin"],
     reportTerms: ["nutrition", "diet"],
   },
@@ -211,6 +249,12 @@ export const SYSTEMS: SystemDef[] = [
     metricNames: [],
     keyMetrics: ["Oxygen Saturation", "Respiratory Rate"],
     heroMetrics: ["Oxygen Saturation"],
+    media: {
+      image: "/images/lungs-breathing.png",
+      video: "/images/lungs-breathing.mp4",
+      position: "50% 50%",
+      tone: "dark",
+    },
     geneticTerms: ["asthma", "lung", "pulmonary"],
     reportTerms: ["pulmo", "chest"],
   },
@@ -219,12 +263,37 @@ export const SYSTEMS: SystemDef[] = [
     title: "Immune & allergies",
     eyebrow: "Immunity",
     description: "Allergy panels, autoimmune markers, infections and screening markers.",
-    categories: ["allergy", "autoimmune", "infectious", "tumor_marker", "other"],
+    categories: ["allergy", "autoimmune", "infectious", "tumor_marker"],
     metricNames: [],
     keyMetrics: [],
     heroMetrics: [],
+    media: {
+      image: "/images/immune-allergies.png",
+      video: "/images/immune-allergies.mp4",
+      position: "50% 50%",
+      tone: "dark",
+    },
     geneticTerms: ["immune", "allerg", "autoimmun"],
     reportTerms: ["immuno", "allerg"],
+  },
+  {
+    id: "clinical",
+    title: "Other clinical measurements",
+    eyebrow: "New & uncategorized",
+    description:
+      "Confirmed canonical measurements that do not yet belong to a curated body system.",
+    categories: ["other", "event"],
+    metricNames: [],
+    keyMetrics: [],
+    heroMetrics: [],
+    media: {
+      image: "/images/other-clinical.png",
+      video: "/images/other-clinical.mp4",
+      position: "50% 52%",
+      tone: "dark",
+    },
+    geneticTerms: [],
+    reportTerms: [],
   },
 ];
 
@@ -236,11 +305,87 @@ export function metricBelongsTo(
   def: SystemDef,
   metric: { category: string; name: string }
 ): boolean {
+  const normalizedName = metric.name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   if (def.metricNames.length > 0) {
     if (def.metricNames.includes(metric.name)) return true;
-    if (def.categories.length === 0) return false;
+  }
+  if (
+    def.metricTerms?.some((term) =>
+      normalizedName.includes(term.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim())
+    )
+  ) {
+    return true;
   }
   return def.categories.includes(metric.category);
+}
+
+export function selectSystemHero<
+  T extends {
+    name: string;
+    latestDate: string;
+    latestValue: number | null;
+    latestText: string | null;
+  },
+>(def: SystemDef, members: T[]): T | null {
+  const usable = members.filter(
+    (member) =>
+      member.latestValue != null ||
+      (!!member.latestText && !/^\s*(n\/?a|not available)\s*$/i.test(member.latestText))
+  );
+  if (usable.length === 0) return null;
+
+  const newestDate = usable.reduce(
+    (latest, member) => (member.latestDate > latest ? member.latestDate : latest),
+    ""
+  );
+  const newest = usable.filter((member) => member.latestDate === newestDate);
+  for (const name of [...def.heroMetrics, ...def.keyMetrics]) {
+    const match = newest.find((member) => member.name === name);
+    if (match) return match;
+  }
+  if (newest.length > 0) return newest[0];
+
+  for (const name of [...def.heroMetrics, ...def.keyMetrics]) {
+    const match = usable.find((member) => member.name === name);
+    if (match) return match;
+  }
+  return usable[0];
+}
+
+/**
+ * Prefer measurements recorded on the newest clinical date, then the
+ * system's curated key metrics, then the remaining newest trends. This keeps
+ * newly ingested canonical names visible without losing the familiar charts.
+ */
+export function selectSystemChartMetrics<
+  T extends {
+    typeId: string;
+    name: string;
+    latestDate: string;
+    pointCount: number;
+  },
+>(def: SystemDef, members: T[], limit: number): T[] {
+  const trendable = [...members]
+    .filter((member) => member.pointCount >= 2)
+    .sort(
+      (a, b) =>
+        b.latestDate.localeCompare(a.latestDate) || a.name.localeCompare(b.name)
+    );
+  const newestDate = trendable[0]?.latestDate;
+  const newest = newestDate
+    ? trendable.filter((member) => member.latestDate === newestDate)
+    : [];
+  const byName = new Map(trendable.map((member) => [member.name, member]));
+  const curated = def.keyMetrics
+    .map((name) => byName.get(name))
+    .filter(Boolean) as T[];
+
+  return [...newest, ...curated, ...trendable]
+    .filter(
+      (member, index, rows) =>
+        rows.findIndex((candidate) => candidate.typeId === member.typeId) === index
+    )
+    .slice(0, limit);
 }
 
 export const CATEGORY_LABELS: Record<string, string> = {

@@ -9,4 +9,10 @@ describe("local storage key isolation", () => {
       "Invalid storage key"
     );
   });
+
+  it("rejects remote object storage URLs", async () => {
+    await expect(getObject("https://objects.example/report.enc")).rejects.toThrow(
+      "Remote object storage keys are not supported"
+    );
+  });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, Pencil, RotateCcw, X } from "lucide-react";
@@ -20,6 +21,17 @@ type Item = {
 };
 
 type ObsType = { id: string; canonicalName: string; aliases: string[]; category: string };
+
+type ClinicalImage = {
+  id: string;
+  status: string;
+  assetKind: string;
+  studyName: string | null;
+  pageLabel: string | null;
+  sourcePage: number | null;
+  width: number | null;
+  height: number | null;
+};
 
 type Decision = "accept" | "reject";
 
@@ -50,6 +62,7 @@ export function ReviewPanel({
   profileName,
   job,
   items,
+  images,
   observationTypes,
 }: {
   document: {
@@ -61,8 +74,17 @@ export function ReviewPanel({
     extractionStatus: string;
   };
   profileName: string;
-  job: { id: string; status: string; model: string | null; error: string | null } | null;
+  job: {
+    id: string;
+    status: string;
+    model: string | null;
+    error: string | null;
+    warnings: string[];
+    uncertainItems: string[];
+    coverage: Record<string, unknown> | null;
+  } | null;
   items: Item[];
+  images: ClinicalImage[];
   observationTypes: ObsType[];
 }) {
   const router = useRouter();
@@ -76,11 +98,18 @@ export function ReviewPanel({
   const [saving, setSaving] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [createMissingObservationTypes, setCreateMissingObservationTypes] = useState(false);
+  const [createMissingObservationTypes, setCreateMissingObservationTypes] = useState(true);
 
   const draftItems = items.filter((i) => i.status === "draft");
   const labItems = draftItems.filter((i) => i.itemType === "lab_observation");
-  const otherItems = draftItems.filter((i) => i.itemType !== "lab_observation");
+  const observationItems = draftItems.filter((i) =>
+    ["lab_observation", "diagnostic_measurement"].includes(i.itemType)
+  );
+  const reportItems = items.filter((i) => i.itemType === "report_summary");
+  const otherItems = draftItems.filter(
+    (i) =>
+      !["lab_observation", "diagnostic_measurement", "report_summary"].includes(i.itemType)
+  );
   const acceptedCount = items.filter((i) => i.status === "accepted").length;
   const acceptedGeneticsOnly =
     acceptedCount > 0 &&
@@ -243,6 +272,40 @@ export function ReviewPanel({
         </p>
       )}
 
+      {job?.coverage && (
+        <div className="grid gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm sm:grid-cols-3">
+          <span>
+            Pages: {String(job.coverage.pages_processed ?? "?")}/
+            {String(job.coverage.pages_total ?? "?")}
+          </span>
+          <span>
+            Sections: {String(job.coverage.sections_extracted ?? "?")}/
+            {String(job.coverage.sections_detected ?? "?")}
+          </span>
+          <span>
+            Unmatched pages: {Array.isArray(job.coverage.unmatched_pages)
+              ? job.coverage.unmatched_pages.length
+              : 0}
+          </span>
+        </div>
+      )}
+
+      {(job?.warnings.length || job?.uncertainItems.length) ? (
+        <Card className="border-amber-300 bg-amber-50/50">
+          <CardHeader>
+            <CardTitle className="text-base">Extraction attention needed</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-sm">
+            {job.warnings.map((warning) => (
+              <p key={`warning-${warning}`}>Warning: {warning}</p>
+            ))}
+            {job.uncertainItems.map((item) => (
+              <p key={`uncertain-${item}`}>Uncertain: {item}</p>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {acceptedUnmappedLabCount > 0 && (
         <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           <input
@@ -373,6 +436,139 @@ export function ReviewPanel({
             </Card>
           )}
 
+          {images.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Protected report images ({images.length})
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Full source pages are retained so scan labels, scale, legends, and acquisition context
+                  stay attached. Confirming this extraction makes them available in Scans for comparison.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {images.map((image) => (
+                    <a
+                      key={image.id}
+                      href={`/api/clinical-images/${image.id}/file`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="overflow-hidden rounded-lg border bg-muted/20 transition-colors hover:border-primary"
+                    >
+                      <Image
+                        unoptimized
+                        src={`/api/clinical-images/${image.id}/file`}
+                        alt={image.pageLabel ?? "Clinical report page"}
+                        width={image.width ?? 1278}
+                        height={image.height ?? 1808}
+                        className="aspect-[0.707] w-full bg-white object-cover object-top"
+                      />
+                      <span className="block border-t p-2 text-xs">
+                        <span className="block truncate font-medium">
+                          {image.studyName ?? image.assetKind}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {image.sourcePage ? `Source page ${image.sourcePage}` : "Uploaded image"} · {image.status}
+                        </span>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {reportItems.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Reports found ({reportItems.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-2">
+                {reportItems.map((item) => {
+                  const raw = item.rawJson;
+                  const findings = Array.isArray(raw.findings) ? raw.findings : [];
+                  const measurements = Array.isArray(raw.measurements) ? raw.measurements : [];
+                  const pageStart = raw.page_start as number | null;
+                  const pageEnd = raw.page_end as number | null;
+                  return (
+                    <div key={item.id} className="rounded-lg border p-3 text-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="font-medium">
+                            {String(raw.study_name ?? raw.modality ?? "Clinical report")}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {String(raw.report_type ?? "other")}
+                            {pageStart ? ` · page ${pageStart}${pageEnd && pageEnd !== pageStart ? `–${pageEnd}` : ""}` : ""}
+                            {` · ${findings.length} findings · ${measurements.length} measurements`}
+                          </p>
+                        </div>
+                        {item.status === "draft" ? (
+                          <div className="flex gap-1">
+                            <Button
+                              size="icon-sm"
+                              variant={decisions[item.id] === "accept" ? "default" : "outline"}
+                              title="Accept report"
+                              onClick={() => setDecision(item.id, "accept")}
+                            >
+                              <Check className="size-3.5" />
+                            </Button>
+                            <Button
+                              size="icon-sm"
+                              variant={decisions[item.id] === "reject" ? "destructive" : "outline"}
+                              title="Reject report"
+                              onClick={() => setDecision(item.id, "reject")}
+                            >
+                              <X className="size-3.5" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <Badge>accepted</Badge>
+                        )}
+                      </div>
+                      {Boolean(raw.impression || raw.summary) && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {String(raw.impression ?? raw.summary)}
+                        </p>
+                      )}
+                      {(findings.length > 0 || measurements.length > 0) && (
+                        <details className="mt-2 text-xs">
+                          <summary className="cursor-pointer text-primary">
+                            View extracted findings and measurements
+                          </summary>
+                          {findings.length > 0 && (
+                            <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                              {findings.map((finding, index) => (
+                                <li key={`${item.id}-finding-${index}`}>{String(finding)}</li>
+                              ))}
+                            </ul>
+                          )}
+                          {measurements.length > 0 && (
+                            <div className="mt-2 grid gap-1">
+                              {measurements.map((measurement, index) => {
+                                const row = measurement as Record<string, unknown>;
+                                return (
+                                  <p key={`${item.id}-measurement-${index}`}>
+                                    {String(row.name ?? "Measurement")}: {String(row.value ?? row.value_text ?? "—")} {String(row.unit ?? "")}
+                                    {row.page_number ? ` · page ${String(row.page_number)}` : ""}
+                                  </p>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </details>
+                      )}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
           {acceptedCount > 0 && draftItems.length === 0 && (
             <Card>
               <CardContent className="py-6 text-sm text-muted-foreground">
@@ -394,15 +590,15 @@ export function ReviewPanel({
             </Card>
           )}
 
-          {labItems.length > 0 && (
+          {observationItems.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">
-                  Lab values ({labItems.length})
+                  Structured measurements ({observationItems.length})
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid gap-1.5">
-                {labItems.map((item) => {
+                {observationItems.map((item) => {
                   const decision = decisions[item.id];
                   const isEditing = editing === item.id;
                   const typeId = mappedTypeId(item);
@@ -456,6 +652,14 @@ export function ReviewPanel({
                               </span>
                             ) : null}
                           </p>
+                          {Boolean(item.rawJson.study_name || item.rawJson.page_number) && (
+                            <p className="text-xs text-muted-foreground">
+                              {item.rawJson.study_name ? String(item.rawJson.study_name) : "Source"}
+                              {item.rawJson.page_number
+                                ? ` · page ${String(item.rawJson.page_number)}`
+                                : ""}
+                            </p>
+                          )}
                         </div>
                         {confBadge(item.confidence)}
                         <div className="flex gap-1">

@@ -50,6 +50,7 @@ Rules:
 - Never derive a diagnosis from a genetic predisposition, a family history mention, or an out-of-range lab value on its own.
 - For prescriptions fill medications.
 - Anything ambiguous goes into uncertain_items; document-level or page-quality problems go into warnings.
+- You may be given a slice of a larger document; the remaining pages are being processed separately. Never warn that pages outside your supplied range are missing, unsupplied, or incomplete, and never warn that a report continues beyond your range. Report only problems with the pages you were actually given.
 - coverage must honestly report the supplied document page total, pages processed, sections detected/extracted, and pages that could not be represented.
 - Respect a non-other document type hint.
 - For genetic reports, use genetic_report, genetic_risks, genetic_variants, and pharmacogenomics. Do not upgrade predisposition into diagnosis or prescribing advice.`;
@@ -131,6 +132,31 @@ function isInternalChunkNotice(notice: string): boolean {
     normalized.includes("remapped to absolute page numbers") ||
     normalized.includes("page provenance follows the requested absolute page range") ||
     normalized.includes("source page order in the parsed text differs")
+  );
+}
+
+/**
+ * Each chunk only sees a slice of the document, so the model routinely reports
+ * that the pages outside its slice "were not supplied". That is true of the
+ * chunk and false of the document, and surfacing it alarms the user about data
+ * that other chunks did extract.
+ *
+ * Phrase matching alone cannot catch this — the model words it differently every
+ * time — so the caller pairs this with proof: the claim is only dropped when
+ * merged coverage shows the pages really were represented.
+ */
+export function claimsUnsuppliedPages(notice: string): boolean {
+  const normalized = notice.toLowerCase();
+  if (!/\bpages?\b/.test(normalized)) return false;
+  return (
+    // Deliberately narrow. Suppressing a genuine warning hides a real problem,
+    // which is worse than showing a redundant one, so match only wording that is
+    // specifically about pages being absent from the input.
+    /\bnot\s+(supplied|provided|included|available|present)\b/.test(normalized) ||
+    /\bonly\s+pages?\b/.test(normalized) ||
+    /\bmissing\s+(page|third page|pages)\b/.test(normalized) ||
+    /\bcontinues?\s+beyond\b/.test(normalized) ||
+    /\bbeyond\s+the\s+supplied\b/.test(normalized)
   );
 }
 
@@ -434,7 +460,13 @@ export function mergeExtractionResults(
       [
         ...results
           .flatMap((result) => result.warnings)
-          .filter((warning) => !isInternalChunkNotice(warning)),
+          .filter((warning) => !isInternalChunkNotice(warning))
+          // Only suppress a "pages were not supplied" claim when merged coverage
+          // proves otherwise. If pages really are unrepresented the warning is
+          // genuine and must survive.
+          .filter(
+            (warning) => !(unmatchedPages.length === 0 && claimsUnsuppliedPages(warning))
+          ),
         ...reportDateConflicts,
         ...(observationDateConflicts.size > 0
           ? ["Conflicting dates were extracted for one or more observations; those dates were left unset."]

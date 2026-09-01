@@ -9,7 +9,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  classifyWarnings,
+  partitionWarnings,
+  type WarningKind,
+} from "@/lib/extraction/warning-classify";
 import { cn } from "@/lib/utils";
+
+const WARNING_LABELS: Record<WarningKind, string> = {
+  missing_value: "missing value",
+  partial_table: "partial table",
+  ambiguity: "ambiguous",
+  note: "note",
+};
 
 type Item = {
   id: string;
@@ -241,6 +253,12 @@ export function ReviewPanel({
 
   const fileUrl = `/api/documents/${doc.id}/file`;
 
+  // Warnings and uncertain items are the same kind of signal to the reader, so
+  // they are classified together and split by whether anything can be done.
+  const classifiedWarnings = partitionWarnings(
+    classifyWarnings([...(job?.warnings ?? []), ...(job?.uncertainItems ?? [])])
+  );
+
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -290,21 +308,51 @@ export function ReviewPanel({
         </div>
       )}
 
-      {(job?.warnings.length || job?.uncertainItems.length) ? (
+      {classifiedWarnings.attention.length > 0 && (
         <Card className="border-amber-300 bg-amber-50/50">
           <CardHeader>
-            <CardTitle className="text-base">Extraction attention needed</CardTitle>
+            <CardTitle className="text-base">
+              Extraction attention needed ({classifiedWarnings.attention.length})
+            </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm">
-            {job.warnings.map((warning) => (
-              <p key={`warning-${warning}`}>Warning: {warning}</p>
-            ))}
-            {job.uncertainItems.map((item) => (
-              <p key={`uncertain-${item}`}>Uncertain: {item}</p>
+            {classifiedWarnings.attention.map((entry, index) => (
+              <div
+                key={`attention-${index}`}
+                className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
+              >
+                <Badge variant="outline" className="shrink-0 text-[10px] capitalize">
+                  {WARNING_LABELS[entry.kind]}
+                </Badge>
+                <span className="min-w-0 flex-1">{entry.text}</span>
+                {entry.page !== null && (
+                  <a
+                    href={`${fileUrl}#page=${entry.page}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 font-medium underline underline-offset-2"
+                  >
+                    View page {entry.page}
+                  </a>
+                )}
+              </div>
             ))}
           </CardContent>
         </Card>
-      ) : null}
+      )}
+
+      {classifiedWarnings.notes.length > 0 && (
+        <details className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+          <summary className="cursor-pointer text-muted-foreground">
+            Extraction notes ({classifiedWarnings.notes.length})
+          </summary>
+          <div className="mt-2 grid gap-1.5 text-muted-foreground">
+            {classifiedWarnings.notes.map((entry, index) => (
+              <p key={`note-${index}`}>{entry.text}</p>
+            ))}
+          </div>
+        </details>
+      )}
 
       {acceptedUnmappedLabCount > 0 && (
         <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">

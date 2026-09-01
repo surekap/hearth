@@ -1,0 +1,94 @@
+/**
+ * Classification of extractor warnings and uncertain items.
+ *
+ * The extractor emits free text, but the text falls into a few stable shapes
+ * that differ in what the user can actually do about them. Filing them all
+ * under one "attention needed" heading is why the review screen reads as a wall
+ * of unresolvable alarms. Pure logic, no DB access — see CODING_STANDARDS.md.
+ */
+
+export type WarningKind =
+  /** A value exists on the page but was not captured. The record is missing data. */
+  | "missing_value"
+  /** A table was only partially transcribed. Re-extracting that page can recover it. */
+  | "partial_table"
+  /** The extractor had to choose between readings and picked one. */
+  | "ambiguity"
+  /** Provenance/transcription note. Honest reporting, not a problem to fix. */
+  | "note";
+
+export type ClassifiedWarning = {
+  text: string;
+  kind: WarningKind;
+  /** Absolute source page, when the text names one. */
+  page: number | null;
+  /** Whether the user can do something that changes the stored record. */
+  actionable: boolean;
+};
+
+const MISSING_VALUE = [
+  /not clearly (printed|visible|legible)/i,
+  /blank or unreadable/i,
+  /unreadable result/i,
+  /not assigned a numeric value/i,
+  /no numeric value/i,
+];
+
+const PARTIAL_TABLE = [
+  /not fully represented/i,
+  /n\/a entries/i,
+  /only clearly readable .* values were extracted/i,
+  /contains additional .* values/i,
+];
+
+const AMBIGUITY = [
+  /\bis ambiguous\b/i,
+  /\bambiguous\b/i,
+  /varies by age/i,
+  /interpreted as/i,
+  /preserved as printed/i,
+  /transcribed as printed/i,
+  /conflicting/i,
+];
+
+function matches(text: string, patterns: RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+export function extractPageNumber(text: string): number | null {
+  const match = /\bpage:?\s*(\d+)\b/i.exec(text);
+  if (!match) return null;
+  const page = Number.parseInt(match[1], 10);
+  return Number.isFinite(page) && page > 0 ? page : null;
+}
+
+export function classifyWarning(text: string): ClassifiedWarning {
+  // Order matters. "values were not fully represented because of OCR/table
+  // ambiguity" mentions ambiguity but is a partial table, so the more specific
+  // shapes are tested first.
+  let kind: WarningKind = "note";
+  if (matches(text, MISSING_VALUE)) kind = "missing_value";
+  else if (matches(text, PARTIAL_TABLE)) kind = "partial_table";
+  else if (matches(text, AMBIGUITY)) kind = "ambiguity";
+
+  return {
+    text,
+    kind,
+    page: extractPageNumber(text),
+    // Only missing_value changes what is stored; the rest are informational
+    // until the re-extraction and disambiguation flows exist.
+    actionable: kind === "missing_value",
+  };
+}
+
+export function classifyWarnings(texts: string[]): ClassifiedWarning[] {
+  return texts.map(classifyWarning);
+}
+
+/** Splits classified entries into the ones worth acting on and the rest. */
+export function partitionWarnings(entries: ClassifiedWarning[]) {
+  return {
+    attention: entries.filter((entry) => entry.kind !== "note"),
+    notes: entries.filter((entry) => entry.kind === "note"),
+  };
+}

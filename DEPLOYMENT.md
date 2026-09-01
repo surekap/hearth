@@ -1,5 +1,18 @@
 # Deploying Hearth to `hetzner-docker`
 
+> **Which Compose files production actually uses.** The live server is deployed with
+> plain `docker compose` commands, which load `docker-compose.yml` plus the
+> server-local, Git-ignored `docker-compose.override.yml`. That override is the real
+> production proxy configuration — it serves **two** hostnames
+> (`hearth.sureka.family` and `health.sureka.family`) and carries
+> `LETSENCRYPT_EMAIL` inline.
+>
+> `docker-compose.production.yml` is **not** in use: it declares a single hostname and
+> requires `VIRTUAL_HOST` / `LETSENCRYPT_EMAIL` in `.env`, which the server does not
+> set, so `docker compose -f docker-compose.yml -f docker-compose.production.yml
+> config` fails outright. Do not deploy with it unless you first reconcile the two —
+> doing so would drop `health.sureka.family`.
+
 Hearth is deployed as two Docker Compose services on the SSH host
 `hetzner-docker`:
 
@@ -9,8 +22,8 @@ Hearth is deployed as two Docker Compose services on the SSH host
 Uploaded reports and extracted clinical images are encrypted before they are written to
 `/app/storage`. That path is bind-mounted from
 `/mnt/storagebox/hearth/storage` on the host. The host's shared `nginx-proxy` and ACME
-containers terminate HTTPS and route `hearth.sureka.family` to the app container over the
-external Docker network `net`.
+containers terminate HTTPS and route both `hearth.sureka.family` and
+`health.sureka.family` to the app container over the external Docker network `net`.
 
 ## Prerequisites
 
@@ -136,8 +149,8 @@ rsync -az --delete \
   ./ hetzner-docker:/opt/hearth/
 ```
 
-The production commands below explicitly name both Compose files, so an old
-`docker-compose.override.yml` is not loaded.
+Keep `docker-compose.override.yml` excluded from the sync: it is the live proxy
+configuration, not a stale leftover, and the deployment depends on it.
 
 ## Build and release
 
@@ -149,14 +162,14 @@ ssh hetzner-docker
 cd /opt/hearth
 
 install -d -m 0700 /opt/hearth/backups
-docker compose -f docker-compose.yml -f docker-compose.production.yml \
+docker compose \
   exec -T postgres sh -lc \
   'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' \
   > "/opt/hearth/backups/hearth-$(date +%Y%m%d-%H%M%S).dump"
 
-docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet
-docker compose -f docker-compose.yml -f docker-compose.production.yml build --pull app
-docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+docker compose config --quiet
+docker compose build --pull app
+docker compose up -d
 ```
 
 The app container waits for Postgres, applies the Drizzle schema, runs the conversation
@@ -167,8 +180,8 @@ the app container is replaced. Postgres and encrypted document storage are not r
 
 ```bash
 cd /opt/hearth
-docker compose -f docker-compose.yml -f docker-compose.production.yml ps
-docker compose -f docker-compose.yml -f docker-compose.production.yml logs --tail=200 app
+docker compose ps
+docker compose logs --tail=200 app
 curl -fsS http://127.0.0.1:3000/login >/dev/null
 curl -fsS https://hearth.sureka.family/login >/dev/null
 ```
@@ -182,8 +195,8 @@ View logs or restart only the application:
 
 ```bash
 cd /opt/hearth
-docker compose -f docker-compose.yml -f docker-compose.production.yml logs -f app
-docker compose -f docker-compose.yml -f docker-compose.production.yml restart app
+docker compose logs -f app
+docker compose restart app
 ```
 
 Inspect disk and database usage:
@@ -191,7 +204,7 @@ Inspect disk and database usage:
 ```bash
 du -sh /mnt/storagebox/hearth/storage
 docker system df
-docker compose -f docker-compose.yml -f docker-compose.production.yml \
+docker compose \
   exec -T postgres sh -lc \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
   -c "select pg_size_pretty(pg_database_size(current_database()));"'

@@ -46,6 +46,11 @@ const createSchema = z.object({
   unit: z.string().nullish(),
   referenceLow: z.number().nullish(),
   referenceHigh: z.number().nullish(),
+  // Set when the value is supplied to answer an extraction warning the model
+  // could not read. Recording both lets the review screen derive that the
+  // warning is resolved from the observation actually existing.
+  documentId: z.string().uuid().nullish(),
+  resolvesWarning: z.string().max(32).nullish(),
 });
 
 export async function POST(req: NextRequest) {
@@ -58,6 +63,18 @@ export async function POST(req: NextRequest) {
       where: eq(schema.observationTypes.id, body.observationTypeId),
     });
     if (!type) throw new ApiError(400, "Unknown observation type");
+
+    // Never trust a client-supplied document id: it must belong to the same
+    // profile, or an observation could be attached across the isolation boundary.
+    if (body.documentId) {
+      const linkedDoc = await db.query.documents.findFirst({
+        where: eq(schema.documents.id, body.documentId),
+        columns: { id: true, profileId: true },
+      });
+      if (!linkedDoc || linkedDoc.profileId !== body.profileId) {
+        throw new ApiError(400, "Unknown document for this profile");
+      }
+    }
     const normalized = normalizeMetricRecord({
       metric: type.canonicalName,
       normalUnit: type.normalUnit,
@@ -86,6 +103,8 @@ export async function POST(req: NextRequest) {
         ),
         source: "manual",
         status: "confirmed",
+        documentId: body.documentId ?? null,
+        metadataJson: body.resolvesWarning ? { resolvesWarning: body.resolvesWarning } : null,
       })
       .returning();
 

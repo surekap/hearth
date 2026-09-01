@@ -45,8 +45,20 @@ export default async function ReviewPage({
     columns: { id: true, canonicalName: true, aliases: true, category: true },
   });
 
+  // A warning counts as resolved only because an observation answering it
+  // exists — the resolution is the fix, not a flag someone set.
+  const documentObservations = await db.query.observations.findMany({
+    where: eq(schema.observations.documentId, doc.id),
+    columns: { metadataJson: true },
+  });
+  const resolvedWarningKeys = documentObservations
+    .map((row) => (row.metadataJson as { resolvesWarning?: string } | null)?.resolvesWarning)
+    .filter((key): key is string => typeof key === "string" && key.length > 0);
+
   return (
     <ReviewPanel
+      profileId={doc.profileId}
+      resolvedWarningKeys={resolvedWarningKeys}
       document={{
         id: doc.id,
         filename: doc.originalFilename,

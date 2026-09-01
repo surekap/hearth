@@ -4,6 +4,7 @@ import {
   extractPageNumber,
   partitionWarnings,
   classifyWarnings,
+  warningKey,
 } from "./warning-classify";
 
 // Every string below is a verbatim warning or uncertain item taken from the
@@ -77,6 +78,21 @@ describe("extractPageNumber", () => {
 
   it("returns null when no page is named", () => {
     expect(extractPageNumber("The ECG report is marked 'Unconfirmed'.")).toBeNull();
+  });
+});
+
+describe("warningKey", () => {
+  it("is stable across calls", () => {
+    expect(warningKey(MISSING_VALUE[0])).toBe(warningKey(MISSING_VALUE[0]));
+  });
+
+  it("ignores whitespace and casing differences", () => {
+    expect(warningKey("Page 7 is  unreadable.")).toBe(warningKey("page 7 is unreadable."));
+  });
+
+  it("distinguishes different warnings", () => {
+    const keys = new Set([...MISSING_VALUE, ...NOTES].map(warningKey));
+    expect(keys.size).toBe(MISSING_VALUE.length + NOTES.length);
   });
 });
 

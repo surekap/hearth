@@ -62,6 +62,25 @@ export function extractPageNumber(text: string): number | null {
   return Number.isFinite(page) && page > 0 ? page : null;
 }
 
+/**
+ * Stable identifier for a warning, derived from its text.
+ *
+ * Warnings live in an immutable JSONB array with no ids, so this is what links
+ * a warning to the observation that answered it. Resolution is therefore
+ * derived from the fix actually existing — a warning cannot be marked resolved
+ * without a real record having been written. FNV-1a; collision risk across the
+ * handful of warnings on one job is negligible.
+ */
+export function warningKey(text: string): string {
+  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < normalized.length; i += 1) {
+    hash ^= normalized.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+}
+
 export function classifyWarning(text: string): ClassifiedWarning {
   // Order matters. "values were not fully represented because of OCR/table
   // ambiguity" mentions ambiguity but is a partial table, so the more specific

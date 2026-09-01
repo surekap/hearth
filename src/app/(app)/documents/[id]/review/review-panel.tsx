@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import {
   classifyWarnings,
   partitionWarnings,
+  warningKey,
   type WarningKind,
 } from "@/lib/extraction/warning-classify";
 import { cn } from "@/lib/utils";
@@ -71,12 +72,16 @@ function normalizeTypeName(name: string) {
 
 export function ReviewPanel({
   document: doc,
+  profileId,
   profileName,
+  resolvedWarningKeys,
   job,
   items,
   images,
   observationTypes,
 }: {
+  profileId: string;
+  resolvedWarningKeys: string[];
   document: {
     id: string;
     filename: string;
@@ -111,6 +116,14 @@ export function ReviewPanel({
   const [reprocessing, setReprocessing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [createMissingObservationTypes, setCreateMissingObservationTypes] = useState(true);
+  const [openWarningForm, setOpenWarningForm] = useState<string | null>(null);
+  const [warningDraft, setWarningDraft] = useState<{
+    typeId: string;
+    value: string;
+    unit: string;
+  }>({ typeId: "", value: "", unit: "" });
+  const [savingWarning, setSavingWarning] = useState(false);
+  const [locallyResolved, setLocallyResolved] = useState<string[]>([]);
 
   const draftItems = items.filter((i) => i.status === "draft");
   const labItems = draftItems.filter((i) => i.itemType === "lab_observation");
@@ -258,6 +271,57 @@ export function ReviewPanel({
   const classifiedWarnings = partitionWarnings(
     classifyWarnings([...(job?.warnings ?? []), ...(job?.uncertainItems ?? [])])
   );
+  const resolvedKeys = new Set([...resolvedWarningKeys, ...locallyResolved]);
+
+  async function submitMissingValue(warningText: string) {
+    const key = warningKey(warningText);
+    const numeric = Number.parseFloat(warningDraft.value);
+    if (!warningDraft.typeId) {
+      setMessage("Choose which test this value belongs to.");
+      return;
+    }
+    if (!Number.isFinite(numeric)) {
+      setMessage("Enter a numeric value.");
+      return;
+    }
+    // Dating an old report's value as today would put it at the wrong end of
+    // every trend, so refuse rather than guess.
+    if (!doc.documentDate) {
+      setMessage("Set this document's report date before adding values to it.");
+      return;
+    }
+    setSavingWarning(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/observations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profileId,
+          observationTypeId: warningDraft.typeId,
+          // The value belongs to the document's clinical date, not to today.
+          observedAt: new Date(doc.documentDate).toISOString(),
+          valueNumeric: numeric,
+          unit: warningDraft.unit.trim() || null,
+          documentId: doc.id,
+          resolvesWarning: key,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? "Could not save the value.");
+      }
+      setLocallyResolved((prev) => [...prev, key]);
+      setOpenWarningForm(null);
+      setWarningDraft({ typeId: "", value: "", unit: "" });
+      setMessage("Value added and linked to this report.");
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save the value.");
+    } finally {
+      setSavingWarning(false);
+    }
+  }
 
   return (
     <div className="grid gap-4">
@@ -316,27 +380,107 @@ export function ReviewPanel({
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm">
-            {classifiedWarnings.attention.map((entry, index) => (
-              <div
-                key={`attention-${index}`}
-                className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
-              >
-                <Badge variant="outline" className="shrink-0 text-[10px] capitalize">
-                  {WARNING_LABELS[entry.kind]}
-                </Badge>
-                <span className="min-w-0 flex-1">{entry.text}</span>
-                {entry.page !== null && (
-                  <a
-                    href={`${fileUrl}#page=${entry.page}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 font-medium underline underline-offset-2"
-                  >
-                    View page {entry.page}
-                  </a>
-                )}
-              </div>
-            ))}
+            {classifiedWarnings.attention.map((entry, index) => {
+              const key = warningKey(entry.text);
+              const resolved = resolvedKeys.has(key);
+              const formOpen = openWarningForm === key;
+              return (
+                <div key={`attention-${index}`} className="grid gap-1.5">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "shrink-0 text-[10px] capitalize",
+                        resolved && "border-emerald-400 text-emerald-700"
+                      )}
+                    >
+                      {resolved ? "resolved" : WARNING_LABELS[entry.kind]}
+                    </Badge>
+                    <span className={cn("min-w-0 flex-1", resolved && "text-muted-foreground")}>
+                      {entry.text}
+                    </span>
+                    {entry.page !== null && (
+                      <a
+                        href={`${fileUrl}#page=${entry.page}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 font-medium underline underline-offset-2"
+                      >
+                        View page {entry.page}
+                      </a>
+                    )}
+                    {entry.actionable && !resolved && !formOpen && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={() => {
+                          setOpenWarningForm(key);
+                          setWarningDraft({ typeId: "", value: "", unit: "" });
+                        }}
+                      >
+                        Add the value
+                      </Button>
+                    )}
+                  </div>
+
+                  {formOpen && (
+                    <div className="grid gap-2 rounded-md border bg-background p-2.5 sm:grid-cols-[2fr_1fr_1fr_auto]">
+                      <select
+                        aria-label="Test"
+                        className="h-9 rounded-md border bg-transparent px-2 text-sm"
+                        value={warningDraft.typeId}
+                        disabled={savingWarning}
+                        onChange={(e) =>
+                          setWarningDraft((d) => ({ ...d, typeId: e.target.value }))
+                        }
+                      >
+                        <option value="">Which test?</option>
+                        {observationTypes.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.canonicalName}
+                          </option>
+                        ))}
+                      </select>
+                      <Input
+                        aria-label="Value"
+                        placeholder="Value"
+                        inputMode="decimal"
+                        value={warningDraft.value}
+                        disabled={savingWarning}
+                        onChange={(e) =>
+                          setWarningDraft((d) => ({ ...d, value: e.target.value }))
+                        }
+                      />
+                      <Input
+                        aria-label="Unit"
+                        placeholder="Unit"
+                        value={warningDraft.unit}
+                        disabled={savingWarning}
+                        onChange={(e) => setWarningDraft((d) => ({ ...d, unit: e.target.value }))}
+                      />
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          disabled={savingWarning}
+                          onClick={() => submitMissingValue(entry.text)}
+                        >
+                          {savingWarning ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={savingWarning}
+                          onClick={() => setOpenWarningForm(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       )}

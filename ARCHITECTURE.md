@@ -48,6 +48,17 @@ cron-triggered recovery endpoint (bearer-auth via `CRON_SECRET`) for jobs that n
 got picked up after an upload. Manual "retry extraction" from the UI re-enters the
 same queue path.
 
+**Warnings are classified, and resolution is derived from the fix.** The
+extractor emits free-text warnings and uncertain items.
+`src/lib/extraction/warning-classify.ts` (pure, tested against real production
+strings) sorts them into `missing_value`, `partial_table`, `ambiguity` and
+`note`; notes are provenance reporting rather than problems and are collapsed
+out of the attention list. A `missing_value` warning can be answered inline by
+supplying the value, which writes a normal `observations` row carrying
+`metadataJson.resolvesWarning`. The review screen then derives "resolved" from
+that observation existing — there is deliberately no way to mark a warning
+resolved without the underlying record being created.
+
 **Drafts are never trusted.** Nothing outside the review screen reads
 `extracted_items`; nothing outside `accept`/`reject` writes to it. This split is the
 single most important invariant in the codebase.

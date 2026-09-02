@@ -7,6 +7,7 @@ describe("extractionResultSchema", () => {
       document_type: "imaging",
       report_date: "2026-09-01",
       lab_name: null,
+      lab_country: null,
       patient_name: null,
       raw_text: "Chest radiograph",
       observations: [],

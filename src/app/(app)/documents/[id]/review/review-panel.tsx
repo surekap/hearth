@@ -164,6 +164,8 @@ export function ReviewPanel({
   const [savingWarning, setSavingWarning] = useState(false);
   const [locallyResolved, setLocallyResolved] = useState<string[]>([]);
   const [reextracting, setReextracting] = useState<string | null>(null);
+  const [dateDraft, setDateDraft] = useState("");
+  const [savingDate, setSavingDate] = useState(false);
 
   const draftItems = items.filter((i) => i.status === "draft");
   const labItems = draftItems.filter((i) => i.itemType === "lab_observation");
@@ -361,7 +363,7 @@ export function ReviewPanel({
     // Dating an old report's value as today would put it at the wrong end of
     // every trend, so refuse rather than guess.
     if (!doc.documentDate) {
-      setMessage("Set this document's report date before adding values to it.");
+      setMessage("Set this document's report date at the top of the page before adding values to it.");
       return;
     }
     setSavingWarning(true);
@@ -397,15 +399,58 @@ export function ReviewPanel({
     }
   }
 
+  async function saveDocumentDate() {
+    if (!dateDraft) return;
+    setSavingDate(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/documents/${doc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentDate: dateDraft }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? "Could not save the date.");
+      }
+      setMessage("Report date saved.");
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save the date.");
+    } finally {
+      setSavingDate(false);
+    }
+  }
+
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold">Review extraction</h1>
           <p className="text-sm text-muted-foreground">
-            {doc.filename} · {profileName} · {doc.documentDate ?? "date unknown"}
+            {doc.filename} · {profileName}
+            {doc.documentDate ? ` · ${doc.documentDate}` : ""}
             {job?.model ? ` · model: ${job.model}` : ""}
           </p>
+          {/* Only reached when no page of the document carries a readable date:
+              the extractor settles day/month order itself, so this is the one
+              date question the reader genuinely has to answer. */}
+          {!doc.documentDate && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-sm">No date was printed on this document. When was it issued?</span>
+              <Input
+                type="date"
+                aria-label="Report date"
+                className="h-8 w-40"
+                value={dateDraft}
+                disabled={savingDate}
+                onChange={(e) => setDateDraft(e.target.value)}
+              />
+              <Button size="sm" onClick={saveDocumentDate} disabled={savingDate || !dateDraft}>
+                {savingDate ? <Loader2 className="size-3.5 animate-spin" /> : "Save date"}
+              </Button>
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           {draftItems.length > 0 && (

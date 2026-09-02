@@ -1,4 +1,5 @@
 import type { AiContext } from "./context";
+import { parseWindowMonths, summarizeChanges, type TestChange } from "./changes";
 
 /**
  * Rules engine: answers purely-numeric questions (trend, latest value,
@@ -8,6 +9,8 @@ import type { AiContext } from "./context";
 
 const TREND_WORDS = /\b(trend|trended|trending|chang(e|ed|ing)|over time|over the (last|past)|history|progress(ed|ion)?|evolv(e|ed)|since)\b/i;
 const LATEST_WORDS = /\b(latest|last|current|most recent|now|today|right now)\b/i;
+const CHANGE_WORDS =
+  /\b(improv(e|ed|ing|ement)|better|wors(e|ened|ening)|declin(e|ed|ing)|deteriorat(e|ed|ing)|(what|which|anything)\b.*\b(changed|moved|different)|progress)\b/i;
 const ABNORMAL_WORDS = /\b(abnormal|out of range|flagged|out of whack|elevated|too (high|low)|concerning|red flags?)\b/i;
 
 function normalize(s: string) {
@@ -105,6 +108,11 @@ export function tryRuleAnswer(
     };
   }
 
+  // "What improved / got worse over the last 6 months?" — a then-vs-now table.
+  if (CHANGE_WORDS.test(question) && mentioned.length === 0) {
+    return changeAnswer(question, context);
+  }
+
   if (mentioned.length !== 1) return null; // ambiguous or none → let the LLM reason
   const test = mentioned[0];
   const history = byTest.get(test)!; // ascending by date
@@ -180,4 +188,90 @@ export function tryRuleAnswer(
   }
 
   return null;
+}
+
+function describeChange(c: TestChange): string {
+  const range =
+    c.referenceLow !== null || c.referenceHigh !== null
+      ? `, ref ${c.referenceLow ?? "–"}–${c.referenceHigh ?? "–"}`
+      : "";
+  return `${c.test}: ${fmt(c.from.value)} → ${fmt(c.to.value)} ${c.unit ?? ""} (${fmtDate(c.from.date)} → ${fmtDate(c.to.date)}${range})`;
+}
+
+function changeAnswer(question: string, context: AiContext): { answer: string; model: string } {
+  const windowMonths = parseWindowMonths(question);
+  const summary =
+    windowMonths === null || windowMonths === context.changes.windowMonths
+      ? context.changes
+      : summarizeChanges(context.observations, { windowMonths });
+  const windowLabel =
+    summary.windowMonths === null
+      ? "your full history"
+      : summary.windowMonths === 1
+        ? "the last month"
+        : `the last ${summary.windowMonths} months`;
+
+  const improved = summary.changes.filter((c) => c.direction === "improved");
+  const worsened = summary.changes.filter((c) => c.direction === "worsened");
+  const stable = summary.changes.filter((c) => c.direction === "stable");
+  const unclear = summary.changes.filter((c) => c.direction === "unclear");
+
+  if (summary.changes.length === 0) {
+    const single = summary.singleValueTests.length;
+    return {
+      answer: sections({
+        answer:
+          single > 0
+            ? `I can't compare anything over ${windowLabel}: ${single} test${single === 1 ? " has" : "s have"} only one value in that window, and a comparison needs two. Widen the window, or get repeat panels and we'll have a real before-and-after.`
+            : `There are no confirmed values in ${windowLabel}, so there is nothing to compare yet.`,
+        dataUsed: `Confirmed values from ${summary.since ?? context.timeRange.from ?? "–"} to ${context.timeRange.to ?? "–"}.`,
+        doctorPoints: ["Ask which panels are worth repeating so trends can be read"],
+      }),
+      model: "rules-engine",
+    };
+  }
+
+  const lines: string[] = [];
+  if (worsened.length > 0) {
+    lines.push(
+      `Getting worse (${worsened.length}) — these need a plan, not patience: ${worsened.map(describeChange).join("; ")}.`
+    );
+  }
+  if (improved.length > 0) {
+    lines.push(
+      `Improved (${improved.length}) — real progress, keep doing what you're doing: ${improved.map(describeChange).join("; ")}.`
+    );
+  }
+  if (unclear.length > 0) {
+    lines.push(
+      `Moved, but no reference range to judge by (${unclear.length}): ${unclear.map(describeChange).join("; ")}.`
+    );
+  }
+  if (stable.length > 0) {
+    lines.push(`Steady (${stable.length}): ${stable.map((c) => c.test).join(", ")}.`);
+  }
+  if (summary.singleValueTests.length > 0) {
+    lines.push(
+      `Only one value in the window, so not comparable: ${summary.singleValueTests.join(", ")}.`
+    );
+  }
+  if (worsened.length === 0 && improved.length === 0) {
+    lines.unshift(`Over ${windowLabel} nothing has moved meaningfully in either direction.`);
+  }
+
+  return {
+    answer: sections({
+      answer: lines.join("\n\n"),
+      dataUsed: `${summary.changes.length} tests with a before-and-after over ${windowLabel} (since ${summary.since ?? context.timeRange.from}); "before" is the last value at the start of the window, "after" is the latest value. Improved/worse is judged by distance from the reference range, and moves under 5% count as steady.`,
+      doctorPoints:
+        worsened.length > 0
+          ? [
+              `Show your doctor the worsening series: ${worsened.map((c) => c.test).join(", ")}`,
+              "Ask what is driving them and what target to aim for",
+              "Ask when to re-test",
+            ]
+          : ["Ask which panels are due next to keep the trend visible"],
+    }),
+    model: "rules-engine",
+  };
 }

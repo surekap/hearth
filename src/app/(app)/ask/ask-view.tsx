@@ -73,6 +73,7 @@ const INSIGHT_TONE_STYLES: Record<Insight["tone"], { card: string; badge: string
 };
 
 const SUGGESTIONS = [
+  "What has improved and what has gotten worse in the last 6 months?",
   "Which of my values are abnormal right now?",
   "How has my ALT trended over time?",
   "Summarize my metabolic health",

@@ -7,6 +7,7 @@ function chunk(page: number, finding: string): ExtractionResult {
     document_type: "specialist_report",
     report_date: "2026-09-01",
     lab_name: null,
+    lab_country: null,
     patient_name: null,
     raw_text: `[Page ${page}] ${finding}`,
     observations: [],
@@ -129,5 +130,80 @@ describe("mergeExtractionResults", () => {
     const result = mergeExtractionResults([first, second], 12);
 
     expect(result.observations).toHaveLength(1);
+  });
+});
+
+describe("reconcileAmbiguousNumericDates", () => {
+  function labResult(rawText: string, date: string, labCountry: string | null): ExtractionResult {
+    const result = chunk(1, rawText);
+    result.lab_country = labCountry;
+    result.report_date = date;
+    result.reports[0].report_date = date;
+    result.observations = [
+      {
+        test_name: "ALT",
+        canonical_name: "ALT",
+        report_date: date,
+        value: 42,
+        value_text: null,
+        unit: "U/L",
+        reference_low: null,
+        reference_high: 45,
+        interpretation: "normal",
+        page_number: 1,
+        confidence: 0.99,
+      },
+    ];
+    return result;
+  }
+
+  it("uses the lab's country when the document itself gives no evidence", () => {
+    const result = labResult("Reported: 01/09/2026. Apollo Diagnostics, Chennai", "2026-01-09", "IN");
+    result.uncertain_items = ["Date format: 01/09/2026 could be DD/MM or MM/DD."];
+
+    const reconciled = reconcileAmbiguousNumericDates(result);
+
+    expect(reconciled.report_date).toBe("2026-09-01");
+    expect(reconciled.observations[0].report_date).toBe("2026-09-01");
+    expect(reconciled.uncertain_items).toEqual([]);
+    expect(reconciled.warnings).toContain(
+      "Numeric dates were read as day/month/year based on the lab's location (India)."
+    );
+  });
+
+  it("keeps month-first readings for a US lab", () => {
+    const result = labResult("Reported: 01/09/2026. Quest Diagnostics, Texas", "2026-01-09", "US");
+
+    const reconciled = reconcileAmbiguousNumericDates(result);
+
+    expect(reconciled.report_date).toBe("2026-01-09");
+    expect(reconciled.observations[0].report_date).toBe("2026-01-09");
+  });
+
+  it("falls back to day-first when neither document nor lab country helps", () => {
+    const result = labResult("Reported: 01/09/2026.", "2026-01-09", null);
+    result.uncertain_items = ["The report date 01/09/2026 is ambiguous."];
+
+    const reconciled = reconcileAmbiguousNumericDates(result);
+
+    expect(reconciled.report_date).toBe("2026-09-01");
+    expect(reconciled.uncertain_items).toEqual([]);
+    expect(reconciled.warnings.at(-1)).toMatch(/day\/month\/year convention/);
+  });
+
+  it("prefers evidence in the document over the lab's country", () => {
+    const result = labResult("Reported: 01/09/2026. Collected: Jan 9, 2026.", "2026-01-09", "IN");
+
+    const reconciled = reconcileAmbiguousNumericDates(result);
+
+    expect(reconciled.report_date).toBe("2026-01-09");
+  });
+
+  it("does not touch results that need no correction", () => {
+    const result = labResult("Reported: 1 September 2026.", "2026-09-01", "IN");
+
+    const reconciled = reconcileAmbiguousNumericDates(result);
+
+    expect(reconciled).toEqual(result);
   });
 });

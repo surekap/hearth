@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROMPT_VERSION = "v7";
+export const PROMPT_VERSION = "v8";
 
 export const diagnosticCategoryValues = [
   "body",
@@ -206,6 +206,8 @@ const extractionResultV3Schema = z.object({
   ]),
   report_date: z.string().nullable(),
   lab_name: z.string().nullable(),
+  /** ISO 3166-1 alpha-2 code of the issuing lab, inferred from its printed address. */
+  lab_country: z.string().nullable(),
   patient_name: z.string().nullable(),
   raw_text: z.string(),
   observations: z.array(extractedObservationSchema),
@@ -273,7 +275,8 @@ function upgradeLegacyExtraction(value: unknown): unknown {
   return {
     ...rest,
     observations,
-    // Extractions stored before diagnoses existed have no such key.
+    // Extractions stored before lab_country / diagnoses existed have no such keys.
+    lab_country: typeof input.lab_country === "string" ? input.lab_country : null,
     diagnoses: Array.isArray(input.diagnoses) ? input.diagnoses : [],
     reports,
     coverage: input.coverage ?? {
@@ -307,6 +310,7 @@ export const OPENAI_JSON_SCHEMA = {
     "document_type",
     "report_date",
     "lab_name",
+    "lab_country",
     "patient_name",
     "raw_text",
     "observations",
@@ -337,6 +341,11 @@ export const OPENAI_JSON_SCHEMA = {
     },
     report_date: { type: ["string", "null"], description: "ISO date YYYY-MM-DD" },
     lab_name: { type: ["string", "null"] },
+    lab_country: {
+      type: ["string", "null"],
+      description:
+        "Two-letter ISO 3166-1 country code of the issuing lab or hospital, inferred from its printed address, phone code, registration numbers, or currency. Null only when nothing on the page indicates a country.",
+    },
     patient_name: {
       type: ["string", "null"],
       description: "Patient name exactly as printed, used only for profile matching",

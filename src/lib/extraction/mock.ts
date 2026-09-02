@@ -25,6 +25,7 @@ export async function extractWithMock(input: {
       document_type: "genetic_report",
       report_date: reportDate,
       lab_name: null,
+      lab_country: null,
       patient_name: null,
       raw_text: `[MOCK EXTRACTION - set OPENAI_API_KEY for real extraction]\n${input.filename}\nThis looks like a genetic report. The mock provider does not invent genetic variants, risks, pharmacogenomics, or lab observations.`,
       observations: [],
@@ -88,6 +89,7 @@ export async function extractWithMock(input: {
     document_type: "lab_report",
     report_date: reportDate,
     lab_name: "Apollo Diagnostics (MOCK)",
+    lab_country: null,
     patient_name: null,
     raw_text: `[MOCK EXTRACTION — set OPENAI_API_KEY for real extraction]\nApollo Diagnostics\nReport date: ${reportDate}\n${rows
       .map(

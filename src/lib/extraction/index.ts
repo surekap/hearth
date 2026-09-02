@@ -4,6 +4,7 @@ import { decryptBuffer } from "@/lib/crypto";
 import { getObject } from "@/lib/storage";
 import { extractWithOpenAI, extractPagesWithOpenAI, type ProviderOutput } from "./openai";
 import { extractWithMock } from "./mock";
+import { earliestExtractedDate } from "./dates";
 import { extractionItemsFromResult, newMeasurementsOnly } from "./items";
 import { extractClinicalImages } from "./clinical-images";
 import { extractionProviderName } from "./provider";
@@ -269,7 +270,9 @@ export async function processExtractionJob(jobId: string): Promise<ProcessResult
         extractionStatus: "draft",
         documentType:
           doc.documentType === "other" ? result.document_type : doc.documentType,
-        documentDate: doc.documentDate ?? result.report_date,
+        // A bundle has no single report_date, but its earliest dated page is
+        // still a better document date than "unknown".
+        documentDate: doc.documentDate ?? result.report_date ?? earliestExtractedDate(result),
       })
       .where(eq(schema.documents.id, doc.id));
 

@@ -1,10 +1,11 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { db, schema } from "@/db";
 import {
   isImplausibleMetricObservation,
   normalizeMetricRecord,
 } from "@/lib/health/normalization";
 import { redactDeep } from "./redact";
+import { summarizeChanges, type ChangeSummary } from "./changes";
 
 export type AiContext = {
   profile: {
@@ -95,10 +96,18 @@ export type AiContext = {
     severity: string | null;
     notedAt: string;
   }>;
+  /**
+   * Then-versus-now per test over the recent window, judged against reference
+   * ranges. The authoritative source for "what improved / got worse" answers.
+   */
+  changes: ChangeSummary;
   /** Keyword-matched excerpts of original report text, when relevant. */
   documentSnippets?: Array<{ document: string; date: string | null; snippet: string }>;
   timeRange: { from: string | null; to: string | null };
 };
+
+/** Six months is the horizon a routine follow-up visit looks back over. */
+export const DEFAULT_CHANGE_WINDOW_MONTHS = 6;
 
 /**
  * Profile isolation happens HERE, before any retrieval: only confirmed
@@ -135,11 +144,15 @@ export async function buildAiContext(
     .where(
       and(
         eq(schema.observations.profileId, profileId),
-        eq(schema.observations.status, "confirmed")
+        eq(schema.observations.status, "confirmed"),
+        // Lab and report values only. Imported wearable samples (heart rate,
+        // steps, HRV…) arrive by the thousand and would crowd every lab value
+        // out of a recency-capped list; they reach the model as healthRollups.
+        isNull(schema.observations.externalSourceType)
       )
     )
     .orderBy(desc(schema.observations.observedAt))
-    .limit(500);
+    .limit(2000);
   const rows = rowsDesc.reverse();
 
   const rollupsDesc = await db
@@ -253,22 +266,25 @@ export async function buildAiContext(
       };
     });
 
+  const observations: AiContext["observations"] = normalizedObservations.map((r) => ({
+    test: r.typeName,
+    category: r.category,
+    date: r.observedAt.toISOString().slice(0, 10),
+    value: r.valueNumeric ?? r.valueText,
+    unit: r.unit,
+    referenceLow: r.referenceLow,
+    referenceHigh: r.referenceHigh,
+    interpretation: r.interpretation,
+  }));
+
   const context: AiContext = {
     profile: {
       relationship: profile.relationship,
       ageYears,
       sexAtBirth: profile.sexAtBirth,
     },
-    observations: normalizedObservations.map((r) => ({
-      test: r.typeName,
-      category: r.category,
-      date: r.observedAt.toISOString().slice(0, 10),
-      value: r.valueNumeric ?? r.valueText,
-      unit: r.unit,
-      referenceLow: r.referenceLow,
-      referenceHigh: r.referenceHigh,
-      interpretation: r.interpretation,
-    })),
+    observations,
+    changes: summarizeChanges(observations, { windowMonths: DEFAULT_CHANGE_WINDOW_MONTHS }),
     diagnoses: diagnosisRows.map((d) => ({
       condition: d.conditionName,
       category: d.category,

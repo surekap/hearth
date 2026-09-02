@@ -7,6 +7,7 @@ function result(): ExtractionResult {
     document_type: "other",
     report_date: "2026-09-01",
     lab_name: null,
+    lab_country: null,
     patient_name: null,
     raw_text: "[Page 1] Echocardiogram",
     observations: [],

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { countryDisplayName, dateConventionForCountry, isDateFormatUncertainty } from "./dates";
 import { extractionModel } from "../ai/models";
 import {
   extractionResultSchema,
@@ -38,7 +39,8 @@ Rules:
 - Numeric results go in value; qualitative results go in value_text.
 - Reference ranges: parse "0-45", "<150", and ">40" into reference_low/reference_high, leaving the missing side null.
 - interpretation: use only printed flags or the printed result versus printed range. Use unknown when no range or flag exists.
-- Dates must follow the source's locale, not US month/day assumptions. Indian hospital dates are normally DD/MM/YYYY: for example, 01/09/2026 is 1 September 2026, not January 9. Use spelled-out dates elsewhere in the bundle, collection/report chronology, facility location, and patient context to resolve numeric dates consistently. If still ambiguous, use null and add an uncertain_items entry.
+- Dates must follow the source's locale, not US month/day assumptions. Indian hospital dates are normally DD/MM/YYYY: for example, 01/09/2026 is 1 September 2026, not January 9. Use spelled-out dates elsewhere in the bundle, collection/report chronology, the lab's address, and patient context to resolve numeric dates consistently. When nothing settles the order, read numeric dates as day/month/year (the convention everywhere except the United States) and add an uncertain_items entry beginning "Date format:" that names the date. Never leave a printed date null merely because its day/month order is uncertain.
+- lab_country: the two-letter ISO country code of the issuing lab or hospital, inferred from its printed address, phone country code, registration numbers, or currency. Use null only when nothing indicates a country.
 - report_date at the document level is only for a date shared by the entire supplied input. Use null for a bundle with multiple dates. Every observation must carry the date printed on its own page in observation.report_date; do not copy a date from another page or report.
 - Assign each observation and measurement its absolute page number when visible or provided in the request.
 - Each PDF page may contain a small synthetic "HEARTH SOURCE PAGE N OF M" marker at its top edge. Use N for provenance, but never transcribe the marker as medical source text or treat it as a finding.
@@ -210,9 +212,17 @@ function explicitMonthDates(rawText: string): Set<string> {
 }
 
 /**
- * Resolve numeric dates only when the document itself proves its convention.
- * This catches bundles that mix 01/09/2026 with an unambiguous 01-Sep-26,
- * while leaving genuinely ambiguous documents for human review.
+ * Settle the day/month order of numeric dates from evidence, in this order:
+ *
+ * 1. The document itself: a spelled-out month, or a day greater than 12.
+ * 2. The lab's country: 01/09/2026 from a Chennai lab is 1 September.
+ * 3. Day-first, the convention everywhere except the United States, which is
+ *    also what the extractor was told to assume.
+ *
+ * Only tokens that could be read either way are touched, and a reading that
+ * the document prints explicitly is never rewritten. Once resolved, the
+ * extractor's own "date format" doubts are replaced by one note saying what
+ * the order was based on, so the reader is told, not asked.
  */
 export function reconcileAmbiguousNumericDates(result: ExtractionResult): ExtractionResult {
   const explicitDates = explicitMonthDates(result.raw_text);
@@ -229,30 +239,57 @@ export function reconcileAmbiguousNumericDates(result: ExtractionResult): Extrac
     if (dmy && explicitDates.has(dmy) && dmy !== mdy) dayFirstEvidence += 2;
     if (mdy && explicitDates.has(mdy) && dmy !== mdy) monthFirstEvidence += 2;
   }
-  if (dayFirstEvidence === monthFirstEvidence) return result;
 
-  const dayFirst = dayFirstEvidence > monthFirstEvidence;
+  let dayFirst: boolean;
+  let basis: string;
+  const country = dateConventionForCountry(result.lab_country);
+  if (dayFirstEvidence !== monthFirstEvidence) {
+    dayFirst = dayFirstEvidence > monthFirstEvidence;
+    basis = "dates written out elsewhere in the document";
+  } else if (country) {
+    dayFirst = country === "day_first";
+    basis = `the lab's location (${countryDisplayName(result.lab_country)})`;
+  } else {
+    dayFirst = true;
+    basis = "the day/month/year convention used outside the United States";
+  }
+
   const corrections = new Map<string, string>();
   for (const token of tokens) {
     if (token.first > 12 || token.second > 12) continue;
     const dmy = isoDate(token.year, token.second, token.first);
     const mdy = isoDate(token.year, token.first, token.second);
     if (!dmy || !mdy || dmy === mdy) continue;
-    corrections.set(dayFirst ? mdy : dmy, dayFirst ? dmy : mdy);
+    const [wrong, right] = dayFirst ? [mdy, dmy] : [dmy, mdy];
+    // A date the document also prints in words is real, not a misreading.
+    if (explicitDates.has(wrong)) continue;
+    corrections.set(wrong, right);
   }
-  if (corrections.size === 0) return result;
 
   const reconciled = structuredClone(result);
   const correct = (date: string | null) => (date ? (corrections.get(date) ?? date) : null);
-  reconciled.report_date = correct(reconciled.report_date);
+  let changed = 0;
+  const apply = (date: string | null) => {
+    const next = correct(date);
+    if (next !== date) changed += 1;
+    return next;
+  };
+  reconciled.report_date = apply(reconciled.report_date);
   for (const observation of reconciled.observations) {
-    observation.report_date = correct(observation.report_date);
+    observation.report_date = apply(observation.report_date);
   }
-  for (const report of reconciled.reports) report.report_date = correct(report.report_date);
+  for (const report of reconciled.reports) report.report_date = apply(report.report_date);
+
+  const doubts = reconciled.uncertain_items.filter(isDateFormatUncertainty);
+  if (changed === 0 && doubts.length === 0) return reconciled;
+
+  reconciled.uncertain_items = reconciled.uncertain_items.filter(
+    (item) => !isDateFormatUncertainty(item)
+  );
   reconciled.warnings = uniqueBy(
     [
       ...reconciled.warnings,
-      `Ambiguous numeric dates were normalized as ${dayFirst ? "day/month/year" : "month/day/year"} using unambiguous dates elsewhere in the document.`,
+      `Numeric dates were read as ${dayFirst ? "day/month/year" : "month/day/year"} based on ${basis}.`,
     ],
     (warning) => warning
   );
@@ -431,6 +468,7 @@ export function mergeExtractionResults(
     document_type: documentType,
     report_date: documentDates.size === 1 ? [...documentDates][0] : null,
     lab_name: results.find((result) => result.lab_name)?.lab_name ?? null,
+    lab_country: results.find((result) => result.lab_country)?.lab_country ?? null,
     patient_name: results.find((result) => result.patient_name)?.patient_name ?? null,
     raw_text: results
       .map((result, index) => `[Extraction chunk ${index + 1}]\n${result.raw_text}`)

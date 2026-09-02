@@ -1,5 +1,5 @@
 import type { AiContext } from "./context";
-import { parseWindowMonths, summarizeChanges, type TestChange } from "./changes";
+import { parseWindowMonths, selectWindow, summarizeChanges, type TestChange } from "./changes";
 
 /**
  * Rules engine: answers purely-numeric questions (trend, latest value,
@@ -10,7 +10,10 @@ import { parseWindowMonths, summarizeChanges, type TestChange } from "./changes"
 const TREND_WORDS = /\b(trend|trended|trending|chang(e|ed|ing)|over time|over the (last|past)|history|progress(ed|ion)?|evolv(e|ed)|since)\b/i;
 const LATEST_WORDS = /\b(latest|last|current|most recent|now|today|right now)\b/i;
 const CHANGE_WORDS =
-  /\b(improv(e|ed|ing|ement)|better|wors(e|ened|ening)|declin(e|ed|ing)|deteriorat(e|ed|ing)|(what|which|anything)\b.*\b(changed|moved|different)|progress)\b/i;
+  /\b(improv(e|ed|ing|ement)|better|wors(e|ened|ening)|declin(e|ed|ing)|deteriorat(e|ed|ing)|chang(e|es|ed|ing)|moved|different|progress)\b/i;
+/** Words that make a question about the whole record rather than one test. */
+const BREADTH_WORDS =
+  /\b(health|labs?|lab results?|results|values|numbers|bloodwork|blood work|panels?|everything|overall|in general|generally|all)\b/i;
 const ABNORMAL_WORDS = /\b(abnormal|out of range|flagged|out of whack|elevated|too (high|low)|concerning|red flags?)\b/i;
 
 function normalize(s: string) {
@@ -109,13 +112,15 @@ export function tryRuleAnswer(
   }
 
   // "What improved / got worse over the last 6 months?" — a then-vs-now table.
-  if (CHANGE_WORDS.test(question) && mentioned.length === 0) {
+  // A test named in passing ("the weight has come down, but how are the
+  // labs?") must not narrow a whole-record question down to that one test.
+  if (CHANGE_WORDS.test(question) && (mentioned.length === 0 || BREADTH_WORDS.test(question))) {
     return changeAnswer(question, context);
   }
 
   if (mentioned.length !== 1) return null; // ambiguous or none → let the LLM reason
   const test = mentioned[0];
-  const history = byTest.get(test)!; // ascending by date
+  const history = windowed(byTest.get(test)!, parseWindowMonths(question)); // ascending by date
 
   // Trend question for one test
   if (TREND_WORDS.test(question)) {
@@ -188,6 +193,18 @@ export function tryRuleAnswer(
   }
 
   return null;
+}
+
+/**
+ * A "last 6 months" trend runs from the last reading before the window to the
+ * latest, so the baseline is where things stood when the window opened rather
+ * than a value from a decade ago.
+ */
+function windowed(history: Obs[], windowMonths: number | null): Obs[] {
+  if (windowMonths === null) return history;
+  const { baseline, inside } = selectWindow(history, windowMonths, new Date());
+  if (inside.length === 0 && !baseline) return history;
+  return baseline ? [baseline, ...inside] : inside;
 }
 
 function describeChange(c: TestChange): string {

@@ -96,6 +96,29 @@ export function judgeDirection(
 }
 
 /**
+ * Splits one test's readings (ascending by date) into a baseline and the
+ * readings inside the window. The baseline is the last reading before the
+ * window opened — where things stood "then" — unless it is older than twice
+ * the window, in which case it says nothing about the period being asked
+ * about and the earliest reading inside the window is used instead.
+ */
+export function selectWindow<T extends { date: string }>(
+  series: T[],
+  windowMonths: number | null,
+  now: Date
+): { baseline: T | null; inside: T[]; since: string | null } {
+  if (windowMonths === null) {
+    return { baseline: series[0] ?? null, inside: series.slice(1), since: null };
+  }
+  const since = monthsBefore(now, windowMonths);
+  const staleBefore = monthsBefore(now, windowMonths * 2);
+  const before = series.filter((o) => o.date <= since && o.date >= staleBefore);
+  const inside = series.filter((o) => o.date > since);
+  if (before.length > 0) return { baseline: before[before.length - 1], inside, since };
+  return { baseline: inside[0] ?? null, inside: inside.slice(1), since };
+}
+
+/**
  * Baseline is the last value at or before the window opened (what things
  * looked like "then"), falling back to the earliest value inside it. Current
  * is the latest value, which must fall inside the window to count as recent.
@@ -121,9 +144,7 @@ export function summarizeChanges(
     const series = [...all].sort((a, b) => a.date.localeCompare(b.date));
     const latest = series[series.length - 1];
     if (since && latest.date < since) continue; // nothing recent for this test
-    const before = since ? series.filter((o) => o.date <= since) : [];
-    const inside = since ? series.filter((o) => o.date > since) : series;
-    const baseline = before.length > 0 ? before[before.length - 1] : inside[0];
+    const { baseline } = selectWindow(series, options.windowMonths, now);
     if (!baseline || baseline === latest) {
       singleValueTests.push(test);
       continue;

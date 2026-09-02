@@ -53,13 +53,42 @@ describe("tryRuleAnswer — what changed", () => {
   it("recomputes for a different window named in the question", () => {
     const result = tryRuleAnswer("What got worse over the last month?", context);
     expect(result?.answer).toContain("the last month");
-    // The one August reading is compared with the last reading before the window.
-    expect(result?.answer).toContain("ALT: 30 → 67");
-    expect(result?.answer).toContain("since 2026-08-02");
+    // A January reading is too stale to be a baseline for "the last month".
+    expect(result?.answer).toContain("only one value in that window");
   });
 
   it("still routes a single-test trend question to the trend handler", () => {
     const result = tryRuleAnswer("How has my ALT trended?", context);
     expect(result?.answer).toContain("ALT has risen");
+  });
+});
+
+describe("tryRuleAnswer — broad change question that mentions one test in passing", () => {
+  const context = contextWith([
+    obs("Weight", "2016-09-29", 84, 95),
+    obs("Weight", "2026-03-17", 100.6, 95),
+    obs("Weight", "2026-09-01", 90, 95),
+    obs("ALT", "2026-01-10", 30, 45),
+    obs("ALT", "2026-08-20", 67, 45),
+    obs("Triglycerides", "2026-02-15", 220, 150),
+    obs("Triglycerides", "2026-08-20", 140, 150),
+  ]);
+
+  it("compares every lab over the window instead of one test's full history", () => {
+    const result = tryRuleAnswer(
+      "How has my health changed in the last 6 months. Obviously the weight has come down but how are the labs?",
+      context
+    );
+    expect(result?.model).toBe("rules-engine");
+    expect(result?.answer).toContain("ALT: 30 → 67");
+    expect(result?.answer).toContain("Triglycerides: 220 → 140");
+    expect(result?.answer).not.toContain("2016");
+  });
+
+  it("keeps a single-test trend inside the named window", () => {
+    const result = tryRuleAnswer("How has my weight changed over the last 6 months?", context);
+    expect(result?.answer).toContain("100.6");
+    expect(result?.answer).not.toContain("2016");
+    expect(result?.answer).toMatch(/fallen/);
   });
 });

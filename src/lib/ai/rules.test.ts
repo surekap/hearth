@@ -53,8 +53,8 @@ describe("tryRuleAnswer — what changed", () => {
   it("recomputes for a different window named in the question", () => {
     const result = tryRuleAnswer("What got worse over the last month?", context);
     expect(result?.answer).toContain("the last month");
-    // A January reading is too stale to be a baseline for "the last month".
-    expect(result?.answer).toContain("only one value in that window");
+    // The January reading is recent enough to serve as the baseline.
+    expect(result?.answer).toContain("ALT: 30 → 67");
   });
 
   it("still routes a single-test trend question to the trend handler", () => {

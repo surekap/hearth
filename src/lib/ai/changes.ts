@@ -98,10 +98,14 @@ export function judgeDirection(
 /**
  * Splits one test's readings (ascending by date) into a baseline and the
  * readings inside the window. The baseline is the last reading before the
- * window opened — where things stood "then" — unless it is older than twice
- * the window, in which case it says nothing about the period being asked
- * about and the earliest reading inside the window is used instead.
+ * window opened — where things stood "then". Labs are often yearly, so a
+ * six-month question may legitimately compare against last year's panel;
+ * but a reading older than two years (or twice the window, if longer) says
+ * nothing about the period asked about, and the earliest reading inside
+ * the window is used instead.
  */
+const MIN_BASELINE_REACH_MONTHS = 24;
+
 export function selectWindow<T extends { date: string }>(
   series: T[],
   windowMonths: number | null,
@@ -111,7 +115,7 @@ export function selectWindow<T extends { date: string }>(
     return { baseline: series[0] ?? null, inside: series.slice(1), since: null };
   }
   const since = monthsBefore(now, windowMonths);
-  const staleBefore = monthsBefore(now, windowMonths * 2);
+  const staleBefore = monthsBefore(now, Math.max(windowMonths * 2, MIN_BASELINE_REACH_MONTHS));
   const before = series.filter((o) => o.date <= since && o.date >= staleBefore);
   const inside = series.filter((o) => o.date > since);
   if (before.length > 0) return { baseline: before[before.length - 1], inside, since };

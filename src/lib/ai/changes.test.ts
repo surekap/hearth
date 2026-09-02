@@ -63,6 +63,19 @@ describe("summarizeChanges", () => {
     expect(summary.changes.some((c) => c.test === "TSH")).toBe(false);
   });
 
+  it("discards a baseline older than two years for a short window", () => {
+    const summary = summarizeChanges(
+      [
+        point("Weight", "2016-09-29", 84, null, 95),
+        point("Weight", "2026-03-17", 100.6, null, 95),
+        point("Weight", "2026-09-01", 90, null, 95),
+      ],
+      { windowMonths: 6, now }
+    );
+    expect(summary.changes[0].from).toEqual({ date: "2026-03-17", value: 100.6 });
+    expect(summary.changes[0].direction).toBe("improved");
+  });
+
   it("uses the whole history when no window is given", () => {
     const summary = summarizeChanges(
       [point("ALT", "2024-01-10", 80, null, 45), point("ALT", "2026-08-20", 40, null, 45)],

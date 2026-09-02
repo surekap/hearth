@@ -18,6 +18,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/mascot";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { parseAnswer } from "@/lib/ai/blocks";
+import { AnswerMarkdown } from "@/components/ai/answer-markdown";
+import { AnswerBlocks } from "@/components/ai/answer-blocks";
 
 type Message = {
   role: "user" | "assistant";
@@ -80,22 +83,24 @@ const SUGGESTIONS = [
   "What should I ask my doctor at the next visit?",
 ];
 
-/** Minimal markdown: **bold** and line breaks. */
 function renderAnswer(text: string) {
-  return text.split("\n").map((line, i) => {
-    const parts = line.split(/(\*\*[^*]+\*\*)/g).map((seg, j) =>
-      seg.startsWith("**") && seg.endsWith("**") ? (
-        <strong key={j}>{seg.slice(2, -2)}</strong>
-      ) : (
-        <span key={j}>{seg}</span>
-      )
-    );
-    return (
-      <p key={i} className={cn("min-h-[0.5em]", line.startsWith("**") && "mt-2")}>
-        {parts}
-      </p>
-    );
-  });
+  const { markdown, blocks } = parseAnswer(text);
+  // The table or chart belongs right under the answer, before the
+  // "Data used" small print. A block that fails to render never hides prose.
+  const split = markdown.indexOf("\n**Data used**");
+  const lead = split === -1 ? markdown : markdown.slice(0, split);
+  const rest = split === -1 ? "" : markdown.slice(split + 1);
+  return (
+    <>
+      <AnswerMarkdown text={lead} />
+      <AnswerBlocks blocks={blocks} />
+      {rest && (
+        <div className="mt-3 border-t pt-2 text-xs text-muted-foreground [&_strong]:text-foreground">
+          <AnswerMarkdown text={rest} />
+        </div>
+      )}
+    </>
+  );
 }
 
 export function AskView({

@@ -149,7 +149,9 @@ export function summarizeChanges(
     const latest = series[series.length - 1];
     if (since && latest.date < since) continue; // nothing recent for this test
     const { baseline } = selectWindow(series, options.windowMonths, now);
-    if (!baseline || baseline === latest) {
+    // Several readings on one day (exercise stages, pre/post bronchodilator)
+    // are one visit, not a before-and-after.
+    if (!baseline || baseline === latest || baseline.date === latest.date) {
       singleValueTests.push(test);
       continue;
     }

@@ -1,4 +1,5 @@
 import { and, asc, desc, eq } from "drizzle-orm";
+import { stripBlocks } from "./blocks";
 import { db, schema } from "@/db";
 import type { AiContext } from "./context";
 
@@ -44,7 +45,7 @@ export async function getRecentConversationHistory(conversationId: string) {
   });
   return newestFirst.reverse().flatMap((turn) =>
     turn.answer
-      ? [{ question: turn.question, answer: turn.answer }]
+      ? [{ question: turn.question, answer: stripBlocks(turn.answer) }]
       : []
   );
 }

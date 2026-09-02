@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { tryRuleAnswer } from "./rules";
+import { parseAnswer, type ChangeTableBlock } from "./blocks";
 import { summarizeChanges } from "./changes";
 import type { AiContext } from "./context";
 
@@ -14,6 +15,13 @@ function obs(test: string, date: string, value: number, hi: number): AiContext["
     referenceHigh: hi,
     interpretation: value > hi ? "high" : "normal",
   };
+}
+
+function changeRows(answer: string | undefined) {
+  const block = parseAnswer(answer ?? "").blocks.find((b) => b.type === "change-table") as
+    | ChangeTableBlock
+    | undefined;
+  return block?.rows.map((r) => `${r.test}: ${r.from.value} → ${r.to.value} ${r.direction}`) ?? [];
 }
 
 function contextWith(observations: AiContext["observations"]): AiContext {
@@ -43,18 +51,21 @@ describe("tryRuleAnswer — what changed", () => {
   it("answers an improved/worse question without the model", () => {
     const result = tryRuleAnswer("What has improved and what has gotten worse in the last 6 months?", context);
     expect(result?.model).toBe("rules-engine");
-    expect(result?.answer).toContain("Getting worse (1)");
-    expect(result?.answer).toContain("ALT: 30 → 67");
-    expect(result?.answer).toContain("Improved (1)");
-    expect(result?.answer).toContain("Triglycerides: 220 → 140");
-    expect(result?.answer).toContain("not comparable: HbA1c");
+    expect(result?.answer).toContain("Getting worse (1) — ALT");
+    expect(result?.answer).toContain("Improved (1) — Triglycerides");
+    expect(changeRows(result?.answer)).toEqual([
+      "ALT: 30 → 67 worsened",
+      "Triglycerides: 220 → 140 improved",
+    ]);
+    const block = parseAnswer(result!.answer).blocks[0] as ChangeTableBlock;
+    expect(block.singleValueTests).toEqual(["HbA1c"]);
   });
 
   it("recomputes for a different window named in the question", () => {
     const result = tryRuleAnswer("What got worse over the last month?", context);
     expect(result?.answer).toContain("the last month");
     // The January reading is recent enough to serve as the baseline.
-    expect(result?.answer).toContain("ALT: 30 → 67");
+    expect(changeRows(result?.answer)).toContain("ALT: 30 → 67 worsened");
   });
 
   it("still routes a single-test trend question to the trend handler", () => {
@@ -80,8 +91,10 @@ describe("tryRuleAnswer — broad change question that mentions one test in pass
       context
     );
     expect(result?.model).toBe("rules-engine");
-    expect(result?.answer).toContain("ALT: 30 → 67");
-    expect(result?.answer).toContain("Triglycerides: 220 → 140");
+    const rows = changeRows(result?.answer);
+    expect(rows).toContain("ALT: 30 → 67 worsened");
+    expect(rows).toContain("Triglycerides: 220 → 140 improved");
+    expect(rows).toContain("Weight: 100.6 → 90 improved");
     expect(result?.answer).not.toContain("2016");
   });
 

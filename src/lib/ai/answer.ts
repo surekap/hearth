@@ -25,6 +25,8 @@ const ANSWER_FORMAT = `Answer structure (use these exact markdown section headin
 **Possible confounders** — what could distort this picture.
 **Discuss with your doctor** — 2-4 concrete discussion points.
 
+Formatting: whenever you compare more than two values, dates, or tests, put them in a GitHub-flavoured markdown table (a header row, then one row per test) instead of listing them in a sentence. Use bullet lists for discussion points. Keep prose to the interpretation.
+
 Keep it under 350 words. This is correlation, not proof — say so when relevant.`;
 
 export async function answerWithOpenAI(

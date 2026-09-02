@@ -20,6 +20,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { matchPharmacogenomics, type PgxResult, type PgxWarning } from "@/lib/health/pgx-match";
+import Link from "next/link";
 
 type Recent = {
   nameText: string;
@@ -89,17 +91,48 @@ function formatDate(date: string | null) {
   });
 }
 
+/**
+ * A genetic result that changes how a drug works belongs next to the drug.
+ * This is the one place genetics speaks unprompted.
+ */
+function PgxNotice({ warnings }: { warnings: PgxWarning[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div className="grid gap-1.5 rounded-md border border-[var(--warning)]/50 bg-[var(--warning)]/10 p-2.5 text-xs">
+      {warnings.map((w) => (
+        <p key={`${w.drug}-${w.gene}`} className="flex items-start gap-1.5">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[var(--warning)]" />
+          <span>
+            <span className="font-semibold">
+              {w.gene ? `${w.gene}: ` : ""}
+              {w.implication}
+            </span>
+            {w.recommendation ? ` — ${w.recommendation}` : ""}{" "}
+            <Link href="/genetics" className="underline underline-offset-2">
+              Genetic report
+            </Link>
+            . Discuss with the prescribing doctor; this is not a prescribing instruction.
+          </span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function MedsView({
   profileId,
   profileName,
   recents,
   events,
+  pharmacogenomics = [],
 }: {
   profileId: string;
   profileName: string;
   recents: Recent[];
   events: Event[];
+  pharmacogenomics?: PgxResult[];
 }) {
+  const pgxFor = (medicationName: string) => matchPharmacogenomics(medicationName, pharmacogenomics);
   const router = useRouter();
   const [logging, setLogging] = useState<string | null>(null);
   const [justLogged, setJustLogged] = useState<string | null>(null);
@@ -271,6 +304,7 @@ export function MedsView({
                   placeholder="Search or type a name…"
                   autoFocus
                 />
+                {name.trim().length >= 3 && <PgxNotice warnings={pgxFor(name)} />}
                 {results.length > 0 && (
                   <div className="absolute top-full z-10 mt-1 w-full rounded-md border bg-popover shadow-md">
                     {results.map((r) => (
@@ -371,6 +405,14 @@ export function MedsView({
               description="Add one manually or accept a prescription from review. After that, each medicine becomes one-tap loggable here."
             />
           ) : (
+            <div className="grid gap-3">
+            {recents.some((r) => pgxFor(r.nameText).length > 0) && (
+              <PgxNotice
+                warnings={recents.flatMap((r) =>
+                  pgxFor(r.nameText).map((w) => ({ ...w, drug: r.nameText }))
+                )}
+              />
+            )}
             <div className="flex flex-wrap gap-2">
               {recents.map((r) => {
                 const ended = isExpired(r.courseEndDate);
@@ -392,7 +434,7 @@ export function MedsView({
                       <Loader2 className="size-3.5 animate-spin" />
                     ) : justLogged === r.nameText ? (
                       <Check className="size-3.5 text-[var(--success)]" />
-                    ) : ended ? (
+                    ) : ended || pgxFor(r.nameText).length > 0 ? (
                       <AlertTriangle className="size-3.5 text-[var(--warning)]" />
                     ) : (
                       <Pill className="size-3.5 text-primary" />
@@ -407,6 +449,7 @@ export function MedsView({
                   </button>
                 );
               })}
+            </div>
             </div>
           )}
         </CardContent>
@@ -486,6 +529,7 @@ export function MedsView({
                   <Pill className="size-4" />
                 </span>
                 <div className="min-w-0 flex-1">
+                  <PgxNotice warnings={pgxFor(e.nameText)} />
                   <p className="text-sm font-medium">
                     {e.nameText}
                     {e.dose ? (

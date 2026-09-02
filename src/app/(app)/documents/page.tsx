@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { desc, eq, inArray } from "drizzle-orm";
-import { FileText, Upload } from "lucide-react";
+import { Download, FileText, Images, Upload } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/active-profile";
 import { db, schema } from "@/db";
@@ -78,12 +78,26 @@ export default async function DocumentsPage() {
             {profile.displayName}&apos;s medical documents
           </p>
         </div>
-        <Button asChild className="max-sm:w-full">
-          <Link href="/upload">
-            <Upload className="size-4" />
-            Upload
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2 max-sm:w-full">
+          <Button asChild variant="outline" className="max-sm:flex-1">
+            <Link href="/images">
+              <Images className="size-4" />
+              Scans
+            </Link>
+          </Button>
+          <Button asChild variant="outline" className="max-sm:flex-1">
+            <Link href="/export">
+              <Download className="size-4" />
+              Export
+            </Link>
+          </Button>
+          <Button asChild className="max-sm:w-full">
+            <Link href="/upload">
+              <Upload className="size-4" />
+              Upload
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {docs.length === 0 ? (

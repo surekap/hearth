@@ -135,6 +135,13 @@
   * {
     @apply border-border outline-ring/50;
   }
+  a,
+  button,
+  [role="button"],
+  summary {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
   body {
     @apply bg-background text-foreground;
     background-image: radial-gradient(
@@ -157,7 +164,7 @@
 
 @layer utilities {
   .interactive-card {
-    @apply transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10;
+    @apply transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10 active:translate-y-0 active:scale-[0.985] active:shadow-none active:duration-75;
   }
   .health-gradient {
     background:

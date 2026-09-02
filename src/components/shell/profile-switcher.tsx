@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import Link from "next/link";
-import { ChevronDown, UserRound, Users } from "lucide-react";
+import { ChevronDown, Dna, Download, Images, Pill, UserRound, Users } from "lucide-react";
 import { switchProfile } from "@/app/actions/profiles";
 import {
   DropdownMenu,
@@ -24,9 +24,12 @@ type Profile = {
 export function ProfileSwitcher({
   profiles,
   activeProfileId,
+  hasGenetics = false,
 }: {
   profiles: Profile[];
   activeProfileId: string | null;
+  /** Genetics only earns a menu entry once a report exists for this person. */
+  hasGenetics?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const active = profiles.find((p) => p.id === activeProfileId);
@@ -58,6 +61,34 @@ export function ProfileSwitcher({
             </span>
           </DropdownMenuItem>
         ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>{active?.displayName ?? "Profile"}</DropdownMenuLabel>
+        <DropdownMenuItem asChild>
+          <Link href="/meds">
+            <Pill className="size-4" />
+            Medications
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/images">
+            <Images className="size-4" />
+            Scans
+          </Link>
+        </DropdownMenuItem>
+        {hasGenetics && (
+          <DropdownMenuItem asChild>
+            <Link href="/genetics">
+              <Dna className="size-4" />
+              Genetics
+            </Link>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem asChild>
+          <Link href="/export">
+            <Download className="size-4" />
+            Export &amp; API
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/profiles">

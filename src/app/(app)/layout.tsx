@@ -1,4 +1,7 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
+import { db, schema } from "@/db";
 import Link from "next/link";
 import Image from "next/image";
 import { LogOut } from "lucide-react";
@@ -7,25 +10,40 @@ import { getActiveProfile } from "@/lib/active-profile";
 import { ProfileSwitcher } from "@/components/shell/profile-switcher";
 import { MainNav } from "@/components/shell/nav";
 import { OfflineStatus } from "@/components/shell/offline-status";
+import { NavigationProgress } from "@/components/shell/navigation-progress";
 import { CommandMenu, type CommandItem } from "@/components/shell/command-menu";
 import { getMetricIndex } from "@/lib/health/metric";
 import { SYSTEMS } from "@/lib/health/systems";
 import { Button } from "@/components/ui/button";
+
+/**
+ * The command palette wants every metric name, which is the slowest query in
+ * the shell. It streams in behind the header so the page never waits on it.
+ */
+async function StreamedCommandMenu({ profileId }: { profileId: string | null }) {
+  const index = profileId ? await getMetricIndex(profileId) : [];
+  const commandItems: CommandItem[] = [
+    ...SYSTEMS.map((s) => ({ label: s.title, hint: "System", href: `/dashboard/${s.id}` })),
+    ...index.map((m) => ({ label: m.name, hint: m.categoryLabel, href: `/metrics/${m.typeId}` })),
+  ];
+  return <CommandMenu items={commandItems} />;
+}
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
   const { profile, profiles } = await getActiveProfile(session.user.id);
-
-  const index = profile ? await getMetricIndex(profile.id) : [];
-  const commandItems: CommandItem[] = [
-    ...SYSTEMS.map((s) => ({ label: s.title, hint: "System", href: `/dashboard/${s.id}` })),
-    ...index.map((m) => ({ label: m.name, hint: m.categoryLabel, href: `/metrics/${m.typeId}` })),
-  ];
+  const hasGenetics = profile
+    ? (await db.query.geneticReports.findFirst({
+        where: eq(schema.geneticReports.profileId, profile.id),
+        columns: { id: true },
+      })) !== undefined
+    : false;
 
   return (
     <div className="min-h-svh min-w-0 max-w-full overflow-x-clip">
+      <NavigationProgress />
       <header className="sticky top-0 z-40 min-w-0 border-b bg-background/88 shadow-sm shadow-primary/5 backdrop-blur-xl">
         <div className="mx-auto flex min-h-14 w-full max-w-6xl items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-4">
           <Link
@@ -51,6 +69,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 relationship: p.relationship,
               }))}
               activeProfileId={profile?.id ?? null}
+              hasGenetics={hasGenetics}
             />
             <form
               action={async () => {
@@ -70,7 +89,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </header>
       <main className="mx-auto min-w-0 w-full max-w-6xl px-4 py-5 pb-8 sm:py-6">{children}</main>
-      <CommandMenu items={commandItems} />
+      <Suspense fallback={null}>
+        <StreamedCommandMenu profileId={profile?.id ?? null} />
+      </Suspense>
       <OfflineStatus />
     </div>
   );

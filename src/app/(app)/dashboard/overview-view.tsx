@@ -50,7 +50,7 @@ export function OverviewView({ profileName, data }: { profileName: string; data:
     <div className="grid gap-5">
       <div>
         <Badge className="mb-2 bg-accent text-accent-foreground" variant="secondary">
-          Dashboard
+          Trends
         </Badge>
         <h1 className="text-3xl font-semibold">Health overview</h1>
         <p className="mt-1 text-sm text-muted-foreground">

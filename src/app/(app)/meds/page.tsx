@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { getActiveProfile } from "@/lib/active-profile";
 import { db, schema } from "@/db";
 import { MedsView } from "./meds-view";
+import type { PgxResult } from "@/lib/health/pgx-match";
 
 export default async function MedsPage() {
   const session = await auth();
@@ -11,7 +12,7 @@ export default async function MedsPage() {
   const { profile } = await getActiveProfile(session.user.id);
   if (!profile) redirect("/profiles");
 
-  const [recents, events] = await Promise.all([
+  const [recents, events, pgx] = await Promise.all([
     db.query.recentMedications.findMany({
       where: eq(schema.recentMedications.profileId, profile.id),
       orderBy: [desc(schema.recentMedications.lastUsedAt)],
@@ -22,12 +23,25 @@ export default async function MedsPage() {
       orderBy: [desc(schema.medicationEvents.eventTime)],
       limit: 100,
     }),
+    db.query.pharmacogenomicResults.findMany({
+      where: eq(schema.pharmacogenomicResults.profileId, profile.id),
+      columns: {
+        drugName: true,
+        gene: true,
+        phenotype: true,
+        implication: true,
+        actionability: true,
+        recommendationSummary: true,
+      },
+    }),
   ]);
+  const pharmacogenomics: PgxResult[] = pgx;
 
   return (
     <MedsView
       profileId={profile.id}
       profileName={profile.displayName}
+      pharmacogenomics={pharmacogenomics}
       recents={recents.map((r) => ({
         nameText: r.nameText,
         dose: r.dose,

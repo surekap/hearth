@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { getAccessibleProfiles } from "@/lib/profile-access";
 import { buildAiContext } from "@/lib/ai/context";
+import { scopeGenomics } from "@/lib/ai/genomics-relevance";
 import { answerWithOpenAI, answerWithMock } from "@/lib/ai/answer";
 import { tryRuleAnswer } from "@/lib/ai/rules";
 import { findDocumentSnippets } from "@/lib/ai/snippets";
@@ -72,8 +73,10 @@ export async function POST(req: NextRequest) {
     ].filter(Boolean);
 
     // Profile isolation happens inside buildAiContext, before any retrieval.
-    const context = await buildAiContext(body.profileId, knownNames);
     const question = redactPII(body.question, knownNames);
+    // Genomics rides along only when the question is about genes or a drug
+    // the pharmacogenomic results cover; otherwise it is years-old noise.
+    const context = scopeGenomics(question, await buildAiContext(body.profileId, knownNames));
     const history = existingConversation
       ? await getRecentConversationHistory(existingConversation.id)
       : [];

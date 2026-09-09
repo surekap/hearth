@@ -16,6 +16,10 @@ describe("query interpretation", () => {
     await interpretSearch("kidney scans last year oldest first", "user:b", "2026-09-09");
     expect(create).toHaveBeenCalledTimes(2);
   });
+  it("does not let a single keyword acquire extra required concepts", async () => {
+    create.mockResolvedValue({ output_text: JSON.stringify({ ...valid, concepts: [["migraine"], ["neurology"]] }) });
+    expect((await interpretSearch("migraine", "single-keyword-test", "2026-09-09")).concepts).toEqual([["migraine", "neurology"]]);
+  });
   it("rejects invalid dates, unconstrained plans and empty concept groups", () => {
     expect(() => validateSearchPlan({ ...valid, from: "2025-02-30" })).toThrow();
     expect(() => validateSearchPlan({ ...valid, from: "2026-01-01" })).toThrow();

@@ -15,6 +15,13 @@ export type AiContext = {
     sexAtBirth: string;
   };
   observations: Array<{
+    id?: string;
+    documentId?: string | null;
+    page?: number | null;
+    study?: string | null;
+    originalName?: string | null;
+    device?: string | null;
+    confidence?: number | null;
     test: string;
     category: string;
     date: string;
@@ -27,6 +34,9 @@ export type AiContext = {
   // Clinician-asserted conditions. `certainty` is carried through so the model
   // can see that a condition was hedged rather than settled.
   diagnoses: Array<{
+    id?: string;
+    documentId?: string | null;
+    page?: number | null;
     condition: string;
     category: string;
     severity: string | null;
@@ -36,6 +46,13 @@ export type AiContext = {
     recordedDate: string | null;
   }>;
   reports: Array<{
+    id?: string;
+    documentId?: string;
+    page?: number | null;
+    study?: string | null;
+    modality?: string | null;
+    facility?: string | null;
+    findings?: unknown;
     date: string | null;
     type: string;
     specialty: string | null;
@@ -96,13 +113,25 @@ export type AiContext = {
     severity: string | null;
     notedAt: string;
   }>;
+  medications?: Array<{
+    id: string;
+    documentId: string | null;
+    name: string;
+    dose: string | null;
+    frequency: string | null;
+    event: string;
+    date: string;
+    start: string | null;
+    end: string | null;
+  }>;
+  documents?: Array<{ id: string; name: string; date: string | null; status: string }>;
   /**
    * Then-versus-now per test over the recent window, judged against reference
    * ranges. The authoritative source for "what improved / got worse" answers.
    */
   changes: ChangeSummary;
   /** Keyword-matched excerpts of original report text, when relevant. */
-  documentSnippets?: Array<{ document: string; date: string | null; snippet: string }>;
+  documentSnippets?: Array<{ document: string; documentId?: string; page?: number | null; date: string | null; snippet: string }>;
   timeRange: { from: string | null; to: string | null };
 };
 
@@ -115,7 +144,8 @@ export const DEFAULT_CHANGE_WINDOW_MONTHS = 6;
  */
 export async function buildAiContext(
   profileId: string,
-  knownNames: string[]
+  knownNames: string[],
+  options: { fullEvidence?: boolean } = {},
 ): Promise<AiContext> {
   const profile = await db.query.profiles.findFirst({
     where: eq(schema.profiles.id, profileId),
@@ -124,6 +154,11 @@ export async function buildAiContext(
 
   const rowsDesc = await db
     .select({
+      id: schema.observations.id,
+      documentId: schema.observations.documentId,
+      metadata: schema.observations.metadataJson,
+      device: schema.observations.deviceName,
+      confidence: schema.observations.confidence,
       observedAt: schema.observations.observedAt,
       valueNumeric: schema.observations.valueNumeric,
       valueText: schema.observations.valueText,
@@ -152,7 +187,7 @@ export async function buildAiContext(
       )
     )
     .orderBy(desc(schema.observations.observedAt))
-    .limit(2000);
+    .limit(options.fullEvidence ? 100_000 : 2000);
   const rows = rowsDesc.reverse();
 
   const rollupsDesc = await db
@@ -180,8 +215,8 @@ export async function buildAiContext(
 
   const reports = await db.query.clinicalReports.findMany({
     where: eq(schema.clinicalReports.profileId, profileId),
-    orderBy: [asc(schema.clinicalReports.createdAt)],
-    limit: 50,
+    orderBy: [desc(schema.clinicalReports.reportDate), desc(schema.clinicalReports.createdAt)],
+    limit: options.fullEvidence ? 100_000 : 50,
   });
 
   const eventsDesc = await db.query.healthEvents.findMany({
@@ -209,10 +244,21 @@ export async function buildAiContext(
     }),
     db.query.diagnoses.findMany({
       where: eq(schema.diagnoses.profileId, profileId),
-      orderBy: [asc(schema.diagnoses.recordedDate)],
-      limit: 100,
+      orderBy: [desc(schema.diagnoses.recordedDate)],
+      limit: options.fullEvidence ? 100_000 : 100,
     }),
   ]);
+
+  const [medications, documents] = options.fullEvidence ? await Promise.all([
+    db.query.medicationEvents.findMany({
+      where: eq(schema.medicationEvents.profileId, profileId),
+      orderBy: [desc(schema.medicationEvents.eventTime)],
+    }),
+    db.query.documents.findMany({
+      where: eq(schema.documents.profileId, profileId),
+      columns: { id: true, originalFilename: true, documentDate: true, extractionStatus: true },
+    }),
+  ]) : [[], []];
 
   const reported = await db.query.conversationDatapoints.findMany({
     where: eq(schema.conversationDatapoints.profileId, profileId),
@@ -267,6 +313,13 @@ export async function buildAiContext(
     });
 
   const observations: AiContext["observations"] = normalizedObservations.map((r) => ({
+    id: r.id,
+    documentId: r.documentId,
+    page: metadataField(r.metadata, "pageNumber", "number"),
+    study: metadataField(r.metadata, "studyName", "string"),
+    originalName: metadataField(r.metadata, "originalName", "string"),
+    device: r.device,
+    confidence: r.confidence,
     test: r.typeName,
     category: r.category,
     date: r.observedAt.toISOString().slice(0, 10),
@@ -286,6 +339,9 @@ export async function buildAiContext(
     observations,
     changes: summarizeChanges(observations, { windowMonths: DEFAULT_CHANGE_WINDOW_MONTHS }),
     diagnoses: diagnosisRows.map((d) => ({
+      id: d.id,
+      documentId: d.documentId,
+      page: d.pageNumber,
       condition: d.conditionName,
       category: d.category,
       severity: d.severity,
@@ -295,6 +351,13 @@ export async function buildAiContext(
       recordedDate: d.recordedDate,
     })),
     reports: reports.map((r) => ({
+      id: r.id,
+      documentId: r.documentId,
+      page: r.pageStart,
+      study: r.studyName,
+      modality: r.modality,
+      facility: r.facility,
+      findings: r.findingsJson,
       date: r.reportDate,
       type: r.reportType,
       specialty: r.specialty,
@@ -354,6 +417,12 @@ export async function buildAiContext(
       severity: d.severity,
       notedAt: d.notedAt.toISOString().slice(0, 10),
     })),
+    medications: medications.map((m) => ({
+      id: m.id, documentId: m.documentId, name: m.nameText, dose: m.dose,
+      frequency: m.frequency, event: m.eventType, date: m.eventTime.toISOString().slice(0, 10),
+      start: m.courseStartDate, end: m.courseEndDate,
+    })),
+    documents: documents.map((d) => ({ id: d.id, name: d.originalFilename, date: d.documentDate, status: d.extractionStatus })),
     timeRange: {
       from: normalizedObservations[0]?.observedAt.toISOString().slice(0, 10) ?? null,
       to:
@@ -365,4 +434,9 @@ export async function buildAiContext(
 
   // Redact PII from every string (report summaries may contain names).
   return redactDeep(context, knownNames);
+}
+
+function metadataField<T extends "string" | "number">(value: unknown, key: string, type: T): (T extends "string" ? string : number) | null {
+  const field = value && typeof value === "object" ? (value as Record<string, unknown>)[key] : null;
+  return (typeof field === type ? field : null) as (T extends "string" ? string : number) | null;
 }

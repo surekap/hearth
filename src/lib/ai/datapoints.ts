@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import { db, schema } from "@/db";
-import { extractionModel } from "./models";
+import { utilityModel, reasoningOptions } from "./models";
 
 const datapointSchema = z.object({
   kind: z.enum(["symptom", "mood", "sleep", "lifestyle", "medication_mention", "other"]),
@@ -74,12 +74,16 @@ function heuristicCapture(message: string): CapturedDatapoint[] {
 }
 
 export async function extractDatapoints(message: string): Promise<CapturedDatapoint[]> {
+  if (!shouldCaptureDatapoints(message)) return [];
   if (!process.env.OPENAI_API_KEY) return heuristicCapture(message);
   try {
-    const client = new OpenAI();
+    const client = new OpenAI({ maxRetries: 0, timeout: 15000 });
+    const model = utilityModel();
     const response = await client.responses.create({
-      model: extractionModel(),
-      reasoning: { effort: "none" },
+      model,
+      ...(model.startsWith("gpt-5.6") ? { reasoning: { effort: "none" as const } } : reasoningOptions(model, "low")),
+      max_output_tokens: 1500,
+      store: false,
       instructions: CAPTURE_PROMPT,
       input: [{ role: "user", content: [{ type: "input_text", text: message }] }],
       text: {
@@ -96,6 +100,12 @@ export async function extractDatapoints(message: string): Promise<CapturedDatapo
     console.error("datapoint capture failed", e);
     return [];
   }
+}
+
+/** Skip pure record questions without paying for an extraction call. False
+ * positives are left to the extractor; never infer symptoms from keywords. */
+export function shouldCaptureDatapoints(message: string): boolean {
+  return /\b(i(?:['’]m|['’]ve|['’]d| am| have| had| feel| felt| started| stopped| take| took| sleep| slept| weigh| exercise| run| quit)|my .{0,40}(?:hurts|aches|feels|started)|been (?:feeling|having|taking|sleeping))\b/i.test(message);
 }
 
 export async function storeDatapoints(

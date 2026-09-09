@@ -32,6 +32,10 @@ describe("judgeDirection", () => {
     expect(judgeDirection(100, 103, null, 200)).toBe("stable");
     expect(judgeDirection(100, 150, null, null)).toBe("unclear");
   });
+  it("does not hide a reference-boundary crossing under the five-percent threshold", () => {
+    expect(judgeDirection(49, 51, null, 50)).toBe("worsened");
+    expect(judgeDirection(51, 49, null, 50)).toBe("improved");
+  });
 });
 
 describe("summarizeChanges", () => {

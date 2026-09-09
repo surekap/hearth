@@ -475,6 +475,7 @@ export async function POST(
               ? {
                   kind: "diagnostic_measurement",
                   studyName: raw.study_name ?? null,
+                  originalName: raw.test_name ?? null,
                   reportType: raw.report_type ?? null,
                   modality: raw.modality ?? null,
                   pageNumber: raw.page_number ?? null,
@@ -483,8 +484,8 @@ export async function POST(
                   extractionItemId: item.id,
                 }
               : raw.page_number
-                ? { pageNumber: raw.page_number, extractionItemId: item.id }
-                : { extractionItemId: item.id },
+                ? { pageNumber: raw.page_number, originalName: raw.test_name ?? null, extractionItemId: item.id }
+                : { originalName: raw.test_name ?? null, extractionItemId: item.id },
         });
       } else if (item.itemType === "diagnosis") {
         const raw = item.rawJson as DiagnosisRaw;

@@ -16,6 +16,9 @@ export type ObservationPoint = {
   referenceLow: number | null;
   referenceHigh: number | null;
   interpretation: string;
+  documentId?: string | null;
+  study?: string | null;
+  device?: string | null;
 };
 
 export type TestChange = {
@@ -85,10 +88,13 @@ export function judgeDirection(
   hi: number | null
 ): ChangeDirection {
   const pct = from === 0 ? (to === 0 ? 0 : 100) : Math.abs((to - from) / Math.abs(from)) * 100;
-  if (pct < STABLE_PERCENT) return "stable";
   if (lo === null && hi === null) return "unclear";
   const before = excursion(from, lo, hi);
   const after = excursion(to, lo, hi);
+  // Never hide crossing a printed boundary behind the noise threshold.
+  if (before === 0 && after > 0) return "worsened";
+  if (before > 0 && after === 0) return "improved";
+  if (pct < STABLE_PERCENT) return "stable";
   if (before === 0 && after === 0) return "stable";
   if (after < before) return "improved";
   if (after > before) return "worsened";
@@ -157,6 +163,9 @@ export function summarizeChanges(
     }
     const from = baseline.value as number;
     const to = latest.value as number;
+    if (baseline.unit !== latest.unit) continue;
+    if (baseline.device !== latest.device && (baseline.device || latest.device)) continue;
+    if (/dexa|body composition/i.test(`${baseline.study} ${latest.study}`) && baseline.documentId !== latest.documentId) continue;
     const lo = latest.referenceLow ?? baseline.referenceLow;
     const hi = latest.referenceHigh ?? baseline.referenceHigh;
     changes.push({

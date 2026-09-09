@@ -18,19 +18,9 @@ AI Q&A, medication logging, and JSON / FHIR / doctor-friendly PDF export.
 - **Extraction**: OpenAI Responses API (PDF/image input, strict JSON schema) when
   `OPENAI_API_KEY` is set; deterministic **mock provider** otherwise so the whole flow
   works offline
-- **AI layer**: profile-isolated context builder → PII redaction (v1) → answer, with
-  `ai_context_logs` recording the exact context packet used. Three tiers:
-  1. **Rules engine** — trend/latest/abnormal questions are computed straight from
-     confirmed observations (no model call at all)
-  2. **Reasoning model** — everything else, with keyword-matched raw-report snippets
-     added when structured data may not cover the question
-  3. **Pre-computed insights** — a physician-voiced briefing (encouraging when things
-     are good, stern when they're not; never prescribes) generated once per data change
-     (fingerprinted) and always visible on the Ask tab
-  Patient-reported details mentioned in conversation (symptoms, mood, sleep) are
-  extracted into `conversation_datapoints` and fed back into future context.
-  Models are per-task: `EXTRACTION_MODEL` (cheap, high-volume) and `REASONING_MODEL`
-  (capable), both defaulting to `OPENAI_MODEL`.
+- **AI layer**: exact latest-value lookups are computed locally. Interpretive questions use a capable reasoning model with source-linked report findings, measurements and bounded evidence retrieval. Answers have a concise overview, deterministic charts/timelines, next steps and expandable analysis. Existing conversations remain readable.
+  Patient-reported statements are extracted separately by a smaller model; pure record questions skip that call. Input, cached input and output token usage are logged with the prompt version and evidence packet.
+  `REASONING_MODEL` defaults to `gpt-5.6-sol`; `EXTRACTION_MODEL` defaults to `gpt-4o-mini`. An explicit legacy `OPENAI_MODEL` overrides these defaults. `UTILITY_MODEL` defaults independently to `gpt-5.6-luna` so simple text jobs never accidentally inherit the expensive model. See [chat implementation notes](docs/chat-implementation.md).
 
 ## Local development
 
@@ -65,7 +55,10 @@ the upload flow.
 | `AUTH_SECRET` | Auth.js JWT secret (`openssl rand -base64 32`) |
 | `DOCUMENT_ENCRYPTION_KEY` | 32-byte hex master key for AES-256-GCM (`openssl rand -hex 32`) |
 | `OPENAI_API_KEY` | Enables real extraction + AI Q&A (otherwise mock provider) |
-| `OPENAI_MODEL` | Optional, defaults to `gpt-4o` |
+| `OPENAI_MODEL` | Optional legacy fallback for extraction and reasoning; leave blank to use task defaults |
+| `REASONING_MODEL` | Clinical interpretation and insights; defaults to `gpt-5.6-sol` |
+| `EXTRACTION_MODEL` | Document extraction; defaults to `gpt-4o-mini` |
+| `UTILITY_MODEL` | Small text extraction jobs; defaults to `gpt-5.6-luna`, independent of `OPENAI_MODEL` |
 | `DOCUMENT_STORAGE_DIR` | Encrypted document storage path (defaults to `./storage`; `/app/storage` in Docker) |
 | `EXTRACTION_PROVIDER` | Set to `mock` to force the mock provider even with a key |
 | `CRON_SECRET` | Bearer secret for the extraction queue recovery endpoint |

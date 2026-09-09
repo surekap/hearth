@@ -403,7 +403,7 @@ export function AskView({
         ))}
         {busy && (
           <div className="flex items-center gap-2 justify-self-start rounded-2xl rounded-bl-lg border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
-            <Loader2 className="size-4 animate-spin" /> Analyzing confirmed data…
+            <Loader2 className="size-4 animate-spin" /> Reviewing records and checking evidence. A detailed review may take a minute…
           </div>
         )}
         <div ref={bottomRef} />

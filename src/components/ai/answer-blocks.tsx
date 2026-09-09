@@ -6,6 +6,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  LabelList,
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
@@ -14,9 +15,11 @@ import {
 } from "recharts";
 import type { AnswerBlock, ChangeRow, ChangeTableBlock, SeriesChartBlock } from "@/lib/ai/blocks";
 import { cn } from "@/lib/utils";
+import type { ReviewBlock } from "@/lib/ai/review-schema";
+import { AnswerMarkdown } from "./answer-markdown";
 
 function fmt(n: number) {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 6 }).format(n);
 }
 
 function fmtDate(iso: string) {
@@ -201,12 +204,12 @@ function ChangeTable({ block }: { block: ChangeTableBlock }) {
 }
 
 function SeriesChart({ block }: { block: SeriesChartBlock }) {
-  const data = block.points.map((p) => ({ ...p, label: fmtDate(p.date) }));
+  const data = block.points.map((p) => ({ ...p, time: new Date(`${p.date}T00:00:00Z`).getTime(), label: fmtDate(p.date) }));
   const values = data.map((p) => p.value);
   const lo = block.referenceLow;
   const hi = block.referenceHigh;
-  const min = Math.min(...values, lo ?? Infinity);
-  const max = Math.max(...values, hi ?? -Infinity);
+  const min = Math.min(...values, lo ?? Infinity, hi ?? Infinity);
+  const max = Math.max(...values, lo ?? -Infinity, hi ?? -Infinity);
   const pad = (max - min || 1) * 0.15;
   return (
     <figure className="mt-3 rounded-lg border bg-background/60 p-2">
@@ -217,33 +220,36 @@ function SeriesChart({ block }: { block: SeriesChartBlock }) {
         </span>
         {(lo !== null || hi !== null) && (
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2 w-5 rounded-sm bg-primary/25" /> normal range
+            <span className="inline-block h-2 w-5 rounded-sm bg-primary/25" /> printed range
           </span>
         )}
       </figcaption>
       <div className="h-40 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -18 }}>
+          <LineChart data={data} margin={{ top: 18, right: 18, bottom: 0, left: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--border)" strokeWidth={1} />
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} minTickGap={24} />
+            <XAxis dataKey="time" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={(v) => fmtDate(new Date(Number(v)).toISOString().slice(0, 10))} tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} minTickGap={24} />
             <YAxis domain={[min - pad, max + pad]} tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => fmt(Number(v))} />
             {(lo !== null || hi !== null) && (
               <ReferenceArea y1={lo ?? min - pad} y2={hi ?? max + pad} fill="var(--primary)" fillOpacity={0.12} stroke="none" />
             )}
             <Tooltip
+              labelFormatter={(value) => fmtDate(new Date(Number(value)).toISOString().slice(0, 10))}
               cursor={{ stroke: "var(--border)" }}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--popover)", color: "var(--popover-foreground)" }}
               formatter={(value) => [`${fmt(Number(value))}${block.unit ? ` ${block.unit}` : ""}`, block.test]}
             />
             <Line
-              type="monotone"
+              type="linear"
               dataKey="value"
               stroke="var(--primary)"
               strokeWidth={2}
               dot={{ r: 4, fill: "var(--primary)", stroke: "var(--card)", strokeWidth: 2 }}
               activeDot={{ r: 6 }}
               isAnimationActive={false}
-            />
+            >
+              {data.length <= 6 && <LabelList dataKey="value" position="top" fontSize={10} fill="var(--foreground)" formatter={(v) => fmt(Number(v))} />}
+            </Line>
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -252,6 +258,84 @@ function SeriesChart({ block }: { block: SeriesChartBlock }) {
       </p>
     </figure>
   );
+}
+
+function SourceLinks({ ids, sources }: { ids: string[]; sources: ReviewBlock["sources"] }) {
+  return <span className="ml-1 inline-flex flex-wrap gap-1 text-xs text-muted-foreground">
+    {[...new Set(ids)].map((id) => {
+      const source = sources.find((s) => s.id === id);
+      if (!source) return null;
+      const label = `${source.label}${source.date ? ` · ${source.date}` : ""}${source.page ? ` · page ${source.page}` : ""}`;
+      return source.documentId ? <a key={id} title={label} aria-label={`Source: ${label}`}
+        className="rounded border px-1.5 py-0.5 hover:bg-muted underline-offset-2 hover:underline"
+        href={`/api/documents/${source.documentId}/file${source.page ? `#page=${source.page}` : ""}`} target="_blank" rel="noreferrer">
+        {sources.indexOf(source) + 1}
+      </a> : <span key={id} title={label} className="rounded border px-1.5 py-0.5">{sources.indexOf(source) + 1}</span>;
+    })}
+  </span>;
+}
+
+function ReviewAnswer({ block }: { block: ReviewBlock }) {
+  const generalLimitations = block.limitations.filter((note) => !block.visuals.some((v) => v.caveat === note));
+  return <div className="mt-2 grid min-w-0 gap-3">
+    <div className="text-xs text-muted-foreground">Sources <SourceLinks ids={block.overviewEvidenceIds} sources={block.sources} /></div>
+    {block.visuals.map((visual, index) => {
+      const first = visual.points[0];
+      if (!first) return null;
+      const sameRange = visual.points.every((p) => p.referenceLow === first.referenceLow && p.referenceHigh === first.referenceHigh);
+      return <section key={index} className="min-w-0 rounded-lg border p-3">
+        <h4 className="mb-2 text-sm font-semibold">{visual.title}</h4>
+        {visual.type === "trend" ? <SeriesChart block={{
+          type: "series-chart", test: first.label, unit: first.unit,
+          referenceLow: sameRange ? first.referenceLow : null, referenceHigh: sameRange ? first.referenceHigh : null,
+          points: visual.points.map((p) => ({ date: p.date!, value: Number(p.value), interpretation: "unknown" })),
+        }} /> : visual.type === "timeline" ? <ol className="grid gap-3 border-l-2 pl-3">
+          {visual.points.map((p) => <li key={p.id} className="text-sm">
+            <div className="text-xs text-muted-foreground">{p.date ?? "Date not recorded"}</div>
+            <div className="font-medium">{p.label}<SourceLinks ids={[p.id]} sources={block.sources} /></div>
+            <p className="mt-1">{p.value}</p>
+          </li>)}
+        </ol> : <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs tabular-nums">
+            <thead><tr className="border-b text-muted-foreground"><th className="p-2">Measurement</th><th className="p-2">Date</th><th className="p-2">Value</th><th className="p-2">Printed range</th></tr></thead>
+            <tbody>{visual.points.map((p) => <tr key={p.id} className="border-b last:border-0">
+              <th scope="row" className="p-2 font-medium">{p.label}<SourceLinks ids={[p.id]} sources={block.sources} /></th>
+              <td className="whitespace-nowrap p-2">{p.date ?? "Unknown"}</td>
+              <td className="whitespace-nowrap p-2 font-medium">{p.value ?? "—"} {p.unit}</td>
+              <td className="whitespace-nowrap p-2">{p.referenceLow === null && p.referenceHigh === null ? "Not recorded" : `${p.referenceLow ?? "—"}–${p.referenceHigh ?? "—"}`}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
+        {visual.type === "trend" && <SourceLinks ids={visual.points.map((p) => p.id)} sources={block.sources} />}
+        {visual.caveat && <p className="mt-2 text-xs text-muted-foreground">{visual.caveat}</p>}
+      </section>;
+    })}
+    {generalLimitations.length > 0 && <div className="rounded-lg border bg-muted/40 p-3 text-xs">
+      <p className="mb-1 font-semibold">Keep in mind</p>
+      <ul className="list-disc space-y-1 pl-4">{generalLimitations.map((note, i) => <li key={i}>{note}</li>)}</ul>
+    </div>}
+    {block.nextSteps.length > 0 && <section>
+      <h4 className="mb-2 text-sm font-semibold">Next steps</h4>
+      <ul className="list-disc space-y-2 pl-4 text-sm">{block.nextSteps.map((step, i) => <li key={i}>
+        {step.text}<SourceLinks ids={step.evidenceIds} sources={block.sources} />
+      </li>)}</ul>
+    </section>}
+    {block.findings.length > 0 && <details className="rounded-lg border p-3">
+      <summary className="cursor-pointer text-sm font-semibold">Full analysis · {block.findings.length} findings</summary>
+      <div className="mt-3 grid gap-4">{block.findings.map((f, i) => <section key={i}>
+        <h4 className="mb-1 text-sm font-semibold">{f.title}<SourceLinks ids={f.evidenceIds} sources={block.sources} /></h4>
+        <AnswerMarkdown text={f.text} />
+        {f.uncertainty && <p className="mt-1 text-xs text-muted-foreground">{f.uncertainty}</p>}
+      </section>)}</div>
+    </details>}
+    <details className="text-xs text-muted-foreground">
+      <summary className="cursor-pointer">Evidence and coverage</summary>
+      <p className="my-2">{block.coverage}</p>
+      <ol className="list-decimal space-y-1 pl-5">{block.sources.map((s) => <li key={s.id}>
+        {s.label} · {s.date ?? "date unknown"}{s.page ? ` · page ${s.page}` : ""}<SourceLinks ids={[s.id]} sources={block.sources} />
+      </li>)}</ol>
+    </details>
+  </div>;
 }
 
 export function AnswerBlocks({ blocks }: { blocks: AnswerBlock[] }) {
@@ -263,7 +347,7 @@ export function AnswerBlocks({ blocks }: { blocks: AnswerBlock[] }) {
           <ChangeTable key={i} block={block} />
         ) : block.type === "series-chart" ? (
           <SeriesChart key={i} block={block} />
-        ) : null
+        ) : block.type === "review" ? <ReviewAnswer key={i} block={block} /> : null
       )}
     </>
   );

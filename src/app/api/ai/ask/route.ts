@@ -11,8 +11,8 @@ import {
 } from "@/lib/api";
 import { getAccessibleProfiles } from "@/lib/profile-access";
 import { buildAiContext } from "@/lib/ai/context";
-import { scopeGenomics } from "@/lib/ai/genomics-relevance";
-import { answerWithOpenAI, answerWithMock } from "@/lib/ai/answer";
+import { answerWithOpenAI, answerWithMock, AnalysisError, type AnswerResult } from "@/lib/ai/answer";
+import { retrievalQuestion } from "@/lib/ai/evidence";
 import { tryRuleAnswer } from "@/lib/ai/rules";
 import { findDocumentSnippets } from "@/lib/ai/snippets";
 import { extractDatapoints, storeDatapoints } from "@/lib/ai/datapoints";
@@ -24,7 +24,7 @@ import {
 import { conversationTitle } from "@/lib/ai/conversation-title";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 const bodySchema = z.object({
   profileId: z.string().uuid(),
@@ -74,20 +74,18 @@ export async function POST(req: NextRequest) {
 
     // Profile isolation happens inside buildAiContext, before any retrieval.
     const question = redactPII(body.question, knownNames);
-    // Genomics rides along only when the question is about genes or a drug
-    // the pharmacogenomic results cover; otherwise it is years-old noise.
-    const context = scopeGenomics(question, await buildAiContext(body.profileId, knownNames));
-    const history = existingConversation
-      ? await getRecentConversationHistory(existingConversation.id)
-      : [];
+    const [context, history] = await Promise.all([
+      buildAiContext(body.profileId, knownNames, { fullEvidence: true }),
+      existingConversation ? getRecentConversationHistory(existingConversation.id) : Promise.resolve([]),
+    ]);
 
-    // 1. Rules engine: numeric trend/latest/abnormal questions never hit the LLM.
-    let result = tryRuleAnswer(question, context);
+    // Exact lookups are free; interpretation always reaches the analysis model.
+    let result: AnswerResult | null = tryRuleAnswer(question, context);
 
     // 2. Otherwise: attach raw-text snippets the structured data may not cover,
     //    then ask the reasoning model.
     if (!result) {
-      const snippets = await findDocumentSnippets(body.profileId, question, knownNames);
+      const snippets = await findDocumentSnippets(body.profileId, retrievalQuestion(question, history), knownNames);
       if (snippets.length > 0) context.documentSnippets = snippets;
       result = process.env.OPENAI_API_KEY
         ? await answerWithOpenAI(question, context, history)
@@ -122,7 +120,7 @@ export async function POST(req: NextRequest) {
           profileId: body.profileId,
           userId,
           question,
-          contextJson: context,
+          contextJson: { ...context, analysisRun: result?.trace ?? null },
           redactionVersion: REDACTION_VERSION,
           model,
           answer,
@@ -134,7 +132,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Capture patient-reported data points from the user's message
     //    (symptoms, mood, sleep…) so they become part of the record.
-    const captured = await extractDatapoints(body.question);
+    const captured = await extractDatapoints(question);
     const storedDatapoints = await storeDatapoints(
       body.profileId,
       persisted.contextLog.id,
@@ -153,6 +151,14 @@ export async function POST(req: NextRequest) {
         healthEvents: context.healthEvents.length,
         snippets: context.documentSnippets?.length ?? 0,
         datapointsCaptured: storedDatapoints.length,
+        analysis: result.trace ? {
+          promptVersion: result.trace.promptVersion,
+          calls: result.trace.calls,
+          inputTokens: result.trace.inputTokens,
+          cachedInputTokens: result.trace.cachedInputTokens,
+          outputTokens: result.trace.outputTokens,
+          durationMs: result.trace.durationMs,
+        } : null,
       },
     });
 
@@ -177,9 +183,18 @@ export async function POST(req: NextRequest) {
         snippetCount: context.documentSnippets?.length ?? 0,
         timeRange: context.timeRange,
         redactionVersion: REDACTION_VERSION,
+        usage: result.trace ? {
+          inputTokens: result.trace.inputTokens,
+          cachedInputTokens: result.trace.cachedInputTokens,
+          outputTokens: result.trace.outputTokens,
+          calls: result.trace.calls,
+        } : null,
       },
     });
   } catch (e) {
+    if (e instanceof AnalysisError) {
+      return NextResponse.json({ error: e.message }, { status: 503 });
+    }
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: e.issues }, { status: 400 });
     }

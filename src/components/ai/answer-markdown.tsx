@@ -10,10 +10,12 @@ import remarkGfm from "remark-gfm";
  */
 export function AnswerMarkdown({ text }: { text: string }) {
   return (
-    <div className="answer-prose text-sm [&_p]:min-h-[0.5em] [&_p+p]:mt-1.5 [&_strong]:mt-2 [&_strong]:block [&_ul]:my-1.5 [&_ul]:grid [&_ul]:gap-1 [&_ul]:pl-4 [&_li]:list-disc [&_ol]:my-1.5 [&_ol]:pl-4 [&_li]:marker:text-muted-foreground">
+    <div className="answer-prose text-sm [&_p]:min-h-[0.5em] [&_p+p]:mt-1.5 [&_ul]:my-1.5 [&_ul]:grid [&_ul]:gap-1 [&_ul]:pl-4 [&_li]:list-disc [&_ol]:my-1.5 [&_ol]:pl-4 [&_li]:marker:text-muted-foreground">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
+          // Model/record markdown must not trigger remote image requests.
+          img: ({ alt }) => alt ? <span>{alt}</span> : null,
           table: ({ children }) => (
             <div className="my-2 -mx-1 overflow-x-auto rounded-lg border">
               <table className="w-full min-w-[28rem] border-collapse text-left text-[13px]">

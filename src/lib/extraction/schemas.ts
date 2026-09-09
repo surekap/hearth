@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROMPT_VERSION = "v8";
+export const PROMPT_VERSION = "v9";
 
 export const diagnosticCategoryValues = [
   "body",

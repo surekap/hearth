@@ -101,25 +101,15 @@ it makes every stored document unreadable — see the backup guidance in
 
 ## AI layer
 
-`src/lib/ai/` builds a profile-scoped `AiContext` packet (`context.ts`), redacts PII
-(`redact.ts`), and answers through three tiers, cheapest first:
+`src/lib/ai/context.ts` loads profile-scoped records and provenance before redacting patient text. `rules.ts` answers only exact latest-value lookups; broad reviews, trends, concerns and explanations go through `answer.ts`.
 
-1. **Rules engine** (`rules.ts`) — trend/latest/abnormal questions computed directly
-   from confirmed observations, no model call.
-2. **Reasoning model** (`answer.ts`) — a fixed `DOCTOR_PERSONA` system prompt that is
-   explicitly constrained (no prescribing, no diagnosing, no cross-profile data),
-   with keyword-matched raw-report snippets (`snippets.ts`) added when structured
-   data may not cover the question.
-3. **Pre-computed insights** (`insights.ts`, `insight-presenter.ts`) — a
-   fingerprinted briefing regenerated only when the underlying data changes
-   (`scheduleInsightRefresh`), always visible on the Ask tab.
+`evidence.ts` resolves the requested dates, assembles a compact evidence packet, retains report findings and source metadata, and exposes a catalog of omitted records. The analysis model can make one bounded evidence read. Missing source coverage is disclosed. The model returns a strict answer schema; `review.ts` resolves chart values from records, checks citation IDs and prevents incompatible measurements from becoming trend lines. These checks do not certify clinical interpretation.
 
-Patient-reported details mentioned in conversation (symptoms, mood, sleep) are mined
-into `conversation_datapoints` (`datapoints.ts`) and fed back into future context.
-Every question, the exact context packet sent to the model, and the redaction version
-are logged to `ai_context_logs` — this is the only way to audit what the model
-actually saw. Models are selected per task via `EXTRACTION_MODEL` /
-`REASONING_MODEL` (`models.ts`), both defaulting to `OPENAI_MODEL`.
+New versioned review blocks use the existing answer-text envelope, avoiding a database migration. `blocks.ts` validates both new and legacy blocks. The UI renders an overview, selected visuals, caveats and next steps, with expandable analysis and source-page links. Conversation replay preserves findings and compact chart values while bounding history size.
+
+Model selection is per task: reasoning defaults to `gpt-5.6-sol`, document extraction to `gpt-4o-mini`, with the explicit legacy `OPENAI_MODEL` fallback preserved. `UTILITY_MODEL` independently defaults to `gpt-5.6-luna` for patient-reported text extraction. Pure record questions skip capture. Precomputed insights remain fingerprinted and use the reasoning model.
+
+`ai_context_logs.context_json.analysisRun` records the prompt version, evidence packet, selected history, additional reads, validation outcome, model effort, actual token/cache usage and duration. Clinical rows remain available in the enclosing context for audit. See [implementation and evaluation notes](docs/chat-implementation.md).
 
 ## Health data layer
 

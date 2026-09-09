@@ -20,6 +20,18 @@ export function reasoningModel(): string {
   return (
     configuredModel(process.env.REASONING_MODEL) ??
     configuredModel(process.env.OPENAI_MODEL) ??
-    "gpt-4o"
+    "gpt-5.6-sol"
   );
+}
+
+/** Small text-only jobs must not inherit the expensive analysis model. */
+export function utilityModel(): string {
+  return configuredModel(process.env.UTILITY_MODEL) ?? "gpt-5.6-luna";
+}
+
+/** Older model overrides do not accept reasoning parameters. */
+export function reasoningOptions(model: string, effort: "low" | "medium" | "high") {
+  return /^(gpt-[56]|o[134])(?:[.-]|$)/.test(model)
+    ? { reasoning: { effort } }
+    : {};
 }

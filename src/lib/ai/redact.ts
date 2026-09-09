@@ -30,7 +30,9 @@ export function redactDeep<T>(value: T, knownNames: string[]): T {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([k, v]) => [
         k,
-        redactDeep(v, knownNames),
+        // Opaque record IDs are provenance, not patient text. Redacting digit
+        // sequences inside UUIDs breaks citation resolution.
+        k === "id" || k.endsWith("Id") ? v : redactDeep(v, knownNames),
       ])
     ) as T;
   }

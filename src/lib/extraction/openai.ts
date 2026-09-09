@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { countryDisplayName, dateConventionForCountry, isDateFormatUncertainty } from "./dates";
-import { extractionModel } from "../ai/models";
+import { extractionModel, reasoningOptions } from "../ai/models";
 import {
   extractionResultSchema,
   OPENAI_JSON_SCHEMA,
@@ -36,6 +36,7 @@ Rules:
 - Put every printed lab result in observations, including qualitative results, sub-panels, and table continuations.
 - Put EVERY labeled numeric or categorical result from a non-lab study in that report's measurements array, not only headline or abnormal values. Examples include FEV1/FVC, EF, chamber dimensions, METS, heart rate, BMD, T-score, Z-score, BMI, fat mass, and VAT/SAT.
 - canonical_name: use a stable international or plain-English measurement name. Keep it null if unsure.
+- Preserve measurement qualifiers in names: pre/post bronchodilator, predicted versus measured, regional versus total, and tissue-fat versus total-fat percentages are different measurements. Preserve printed scanner manufacturer/model, software version, reference population and protocol in the report's findings; never infer a matching device from the facility name.
 - Numeric results go in value; qualitative results go in value_text.
 - Reference ranges: parse "0-45", "<150", and ">40" into reference_low/reference_high, leaving the missing side null.
 - interpretation: use only printed flags or the printed result versus printed range. Use unknown when no range or flag exists.
@@ -694,7 +695,7 @@ async function extractChunkWithOpenAI({
       model,
       instructions: SYSTEM_PROMPT,
       max_output_tokens: 16000,
-      reasoning: { effort: "low" },
+      ...reasoningOptions(model, "low"),
       input: [
         {
           role: "user",

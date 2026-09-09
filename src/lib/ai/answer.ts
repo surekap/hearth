@@ -3,12 +3,12 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import type { AiContext } from "./context";
 import { reasoningModel, reasoningOptions } from "./models";
-import { budgetHistory, packEvidence, type HistoryTurn } from "./evidence";
+import { budgetHistory, compactEvidencePacket, packEvidence, type HistoryTurn } from "./evidence";
 import { analysisSchema } from "./review-schema";
 import { buildReview, validateAnalysis } from "./review";
 import { encodeBlocks } from "./blocks";
 
-export const ANSWER_PROMPT_VERSION = "evidence-review-v1";
+export const ANSWER_PROMPT_VERSION = "evidence-review-v2";
 /** Only intentional, patient-safe failure messages cross the API boundary. */
 export class AnalysisError extends Error {}
 export const DOCTOR_PERSONA = `You are Hearth's health-record analyst. Explain the patient's records in plain language with the care and precision of a thoughtful clinician, without claiming to be their treating physician.
@@ -20,9 +20,10 @@ Be specific without scolding or exaggerated reassurance. Put uncertainty next to
 
 const ANSWER_FORMAT = `Return the structured answer. Overview: directly answer the question in 2-3 sentences. Findings: evidence-linked interpretations, prioritized by clinical relevance, each with a short title and enough explanation to be useful. They are shown in expandable detail, so do not sacrifice depth to shorten the overview. Put major concerns, essential caveats and urgent actions in the overview/nextSteps as well, where they remain visible.
 Use evidenceIds for patient-specific statements, including the overview and nextSteps. Use empty evidenceIds only for general explanations or the patient's current message. Refer to previous conversation to understand follow-ups but recheck facts against current evidence. Do not put raw source IDs, URLs or markdown headings in prose; the UI attaches sources.
-Choose 0-3 useful visuals: trend only for comparable numeric measurements of the SAME metric on different dates; values for snapshots or incompatible measurements; timeline for report/diagnosis findings. Choose only evidence IDs, never write chart values yourself. Avoid repeating all chart values in prose. Never convert a single value into a trend. Mixed-unit metrics need a values table, not a common axis.
+Choose 0-3 useful visuals. Prefer a simple trend chart for one important comparable metric and a short imaging timeline over large tables. A trend must contain ONLY the SAME metric on different dates (e.g. LDL across dates, never LDL plus HDL). Use values for snapshots or incompatible measurements, normally at most 6 readings. Choose only evidence IDs, never write chart values yourself. Avoid repeating chart values or creating overlapping visuals. Never convert a single value into a trend. Mixed-unit metrics need a values table, not a common axis.
 For a broad review aim for 4-8 substantive findings and 2-4 concrete nextSteps; a narrow answer can be much shorter. Empty arrays are appropriate where no findings/visuals are supported. Keep the visible overview concise, not the analysis superficial.
-Before finalizing check the scope/coverage and read relevant missing catalog items when necessary. Distinguish supported improvements from ongoing concerns; check important imaging findings, discordant evidence and comparability caveats. Explicitly acknowledge material gaps. Cite only evidence supplied in this request or a read_evidence result. Do not claim an exhaustive review when coverage is partial. Do not output private chain-of-thought.`;
+Keep next steps short and actionable; put supporting explanations in findings. Limit general limitations to material gaps that change interpretation; put specific caveats beside their finding. Do not repeat the same caution in several sections.
+The observations and catalog use columnar tables: map each row to its columns; omitted trailing cells are null. Observation rows are confirmed evidence and their first cell is the citation ID. Before finalizing check the scope/coverage and read relevant missing catalog items when necessary. Distinguish supported improvements from ongoing concerns; check important imaging findings, discordant evidence and comparability caveats. Explicitly acknowledge material gaps. Cite only evidence supplied in this request or a read_evidence result. Do not claim an exhaustive review when coverage is partial. Do not output private chain-of-thought.`;
 
 export type AnswerResult = {
   answer: string;
@@ -50,7 +51,9 @@ export async function answerWithOpenAI(question: string, context: AiContext, his
   const effort = /overall|review|summari[sz]e|improv|worse|health|compare/i.test(question) ? "high" : "medium";
   const options = reasoningOptions(model, effort);
   const selectedHistory = budgetHistory(history);
-  const packed = packEvidence(context, question, history);
+  const broad = /overall|review|summari[sz]e|improv|worse|health|labs/i.test(question);
+  const packed = packEvidence(context, question, history, broad ? 48000 : 16000);
+  const modelPacket = compactEvidencePacket(packed.packet);
   const available = new Map(packed.all.map((e) => [e.id, e]));
   const supplied = new Map(packed.selected.map((e) => [e.id, e]));
   const catalogIds = new Set(packed.packet.catalog.map((e) => e.id));
@@ -59,13 +62,13 @@ export async function answerWithOpenAI(question: string, context: AiContext, his
       { role: "user" as const, content: turn.question },
       { role: "assistant" as const, content: turn.answer },
     ]),
-    { role: "user", content: JSON.stringify({ question, ...packed.packet }) },
+    { role: "user", content: JSON.stringify({ question, ...modelPacket }) },
   ];
   const trace: NonNullable<AnswerResult["trace"]> = {
     promptVersion: ANSWER_PROMPT_VERSION, reasoningEffort: options.reasoning?.effort ?? null,
     inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, calls: 0, durationMs: 0,
     historyTurns: selectedHistory.length, omittedHistoryTurns: history.length - selectedHistory.length,
-    initialPacket: packed.packet, history: selectedHistory, reads: [], validation: "pending",
+    initialPacket: modelPacket, history: selectedHistory, reads: [], validation: "pending",
   };
   const signal = AbortSignal.timeout(145_000);
   // Normally one call. At most one evidence expansion and one correction;

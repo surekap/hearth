@@ -40,7 +40,7 @@ describe("analysis orchestration", () => {
     let requested = "";
     create.mockImplementationOnce(async (request) => {
       const packet = JSON.parse(request.input.at(-1).content);
-      requested = packet.catalog[0].id;
+      requested = packet.catalog.rows[0][0];
       expect(packet.evidence.some((e: { id: string }) => e.id === requested)).toBe(false);
       return { ...response(), output_text: "", output: [{
         type: "function_call", name: "read_evidence", call_id: "read-1", arguments: JSON.stringify({ ids: [requested] }),

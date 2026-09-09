@@ -69,6 +69,22 @@ function compact(data: Record<string, unknown>) {
   return Object.fromEntries(Object.entries(data).filter(([, v]) => v !== null && v !== undefined && v !== ""));
 }
 
+// Columnar transport removes repeated JSON keys, without summarizing away
+// numeric readings, reference ranges, qualifiers or source provenance.
+const OBSERVATION_COLUMNS = ["id", "label", "date", "value", "unit", "referenceLow", "referenceHigh", "interpretation", "category", "study", "originalName", "device", "confidence", "source", "role"];
+function observationRow(e: Record<string, unknown>) {
+  const row = OBSERVATION_COLUMNS.map((key) => e[key] ?? null);
+  while (row.length && row.at(-1) === null) row.pop();
+  return row;
+}
+export function compactEvidencePacket<T extends { evidence: Record<string, unknown>[]; catalog: { id: string; kind: string; label: string; date: string | null }[] }>(packet: T) {
+  return { ...packet,
+    evidence: packet.evidence.filter((e) => e.kind !== "observation"),
+    observations: { columns: OBSERVATION_COLUMNS, rows: packet.evidence.filter((e) => e.kind === "observation").map(observationRow) },
+    catalog: { columns: ["id", "kind", "label", "date"], rows: packet.catalog.map((e) => [e.id, e.kind, e.label, e.date]) },
+  };
+}
+
 export function collectEvidence(context: AiContext): Evidence[] {
   const all: Evidence[] = [];
   const add = (kind: Evidence["kind"], label: string, date: string | null, data: Record<string, unknown>, documentId: string | null = null, page: number | null = null) => {
@@ -122,10 +138,18 @@ export function packEvidence(context: AiContext, question: string, history: Hist
   if (scope.from) {
     const oldest = new Date(`${scope.from}T00:00:00Z`);
     oldest.setUTCFullYear(oldest.getUTCFullYear() - 2);
-    const currentMetrics = new Set(eligible.filter((e) => e.kind === "observation").map((e) => `${e.label}|${e.data.unit ?? ""}`));
+    const datesByMetric = new Map<string, Set<string>>();
+    for (const e of eligible.filter((e) => e.kind === "observation" && e.date)) {
+      const key = e.label;
+      const dates = datesByMetric.get(key) ?? new Set<string>();
+      dates.add(e.date!); datesByMetric.set(key, dates);
+    }
+    // Prefer comparisons within the requested period. Earlier readings are
+    // useful only when the period itself has fewer than two measurement dates.
+    const currentMetrics = new Set([...datesByMetric].filter(([, dates]) => dates.size < 2).map(([key]) => key));
     const baselineByMetric = new Map<string, Evidence>();
     for (const e of all) {
-      const key = `${e.label}|${e.data.unit ?? ""}`;
+      const key = e.label;
       if (e.kind !== "observation" || !currentMetrics.has(key) || !e.date || e.date >= scope.from || e.date < oldest.toISOString().slice(0, 10)) continue;
       if ((baselineByMetric.get(key)?.date ?? "") < e.date) baselineByMetric.set(key, e);
     }
@@ -133,6 +157,7 @@ export function packEvidence(context: AiContext, question: string, history: Hist
   }
   const keywords = [...new Set(resolvedQuestion.toLowerCase().match(/[a-z]{3,}/g) ?? [])]
     .filter((w) => !/^(the|what|how|has|have|are|was|were|health|report|reports|results|last|months|year|and|with|this|that|from|changed|improved)$/.test(w));
+  if (/muscle|dexa|dxa|body composition/i.test(question)) keywords.push("lean", "dexa", "dxa", "body composition", "scanner", "prodigy");
   const score = (e: Evidence) => {
     const text = `${e.label} ${JSON.stringify(e.data)}`.toLowerCase();
     const matched = keywords.filter((w) => text.includes(w)).length;
@@ -142,7 +167,7 @@ export function packEvidence(context: AiContext, question: string, history: Hist
   // out single readings. Reports and diagnoses participate in broad reviews.
   const groups = new Map<string, Evidence[]>();
   for (const e of eligible.filter((e) => e.kind === "observation")) {
-    const key = `${e.label}|${e.data.unit ?? ""}`;
+    const key = e.label;
     const group = groups.get(key) ?? [];
     group.push(e);
     groups.set(key, group);
@@ -161,14 +186,19 @@ export function packEvidence(context: AiContext, question: string, history: Hist
     source: e.documentId ? `D${documentIds.indexOf(e.documentId) + 1}` : null,
     ...(baselineIds.has(e.id) ? { role: "Prior baseline outside requested period" } : {}), ...e.data });
   const selected: Evidence[] = [];
+  const selectedIds = new Set<string>();
   let size = 0;
   for (const e of ranked) {
-    const cost = JSON.stringify(wire(e)).length;
+    const group = e.kind === "observation" && endpoints.has(e.id) ? groups.get(e.label) : undefined;
+    // Reserve both endpoints together. Sorting all latest endpoints ahead of
+    // older ones otherwise produces snapshots with no usable comparisons.
+    const candidates = [...new Map((group ? [group[0], group.at(-1)!] : [e]).map((item) => [item.id, item])).values()]
+      .filter((item) => !selectedIds.has(item.id));
+    const cost = candidates.reduce((total, item) => total + JSON.stringify(item.kind === "observation" ? observationRow(wire(item)) : wire(item)).length, 0);
     if (size + cost > maxChars) continue;
-    selected.push(e); size += cost;
+    selected.push(...candidates); candidates.forEach((item) => selectedIds.add(item.id)); size += cost;
   }
-  const selectedIds = new Set(selected.map((e) => e.id));
-  const omitted = eligible.filter((e) => !selectedIds.has(e.id));
+  const omitted = ranked.filter((e) => !selectedIds.has(e.id));
   // A bounded catalog allows a second read without resending the full chart.
   const catalog = omitted.slice(0, 400).map((e) => ({ id: e.id, kind: e.kind, label: e.label, date: e.date }));
   const genomics = scopeGenomics(resolvedQuestion, context).genomics;

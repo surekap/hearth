@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { budgetHistory, collectEvidence, comparisonCaveat, packEvidence, resolveDateScope } from "./evidence";
+import { budgetHistory, collectEvidence, compactEvidencePacket, comparisonCaveat, packEvidence, resolveDateScope } from "./evidence";
 import { fixtureContext, documentA } from "./test-fixtures";
 import { redactDeep } from "./redact";
 
@@ -14,7 +14,8 @@ describe("evidence selection", () => {
   });
   it("represents excluded evidence in a catalog rather than silently claiming completeness", () => {
     const packet = packEvidence(fixtureContext(), "Review 2026", [], 700, now);
-    expect(JSON.stringify(packet.packet.evidence).length).toBeLessThan(750);
+    const wire = compactEvidencePacket(packet.packet);
+    expect(JSON.stringify(wire.evidence).length + JSON.stringify(wire.observations.rows).length).toBeLessThan(750);
     expect(packet.packet.coverage.omitted).toBeGreaterThan(0);
     expect(packet.packet.catalog.length).toBe(packet.packet.coverage.omitted);
   });
@@ -50,6 +51,32 @@ describe("evidence selection", () => {
   });
 });
 describe("scope and token savings", () => {
+  it("preserves exact observations and their provenance in the compact transport", () => {
+    const packed = packEvidence(fixtureContext(), "Review 2026", [], 48000, now);
+    const wire = compactEvidencePacket(packed.packet);
+    for (const row of wire.observations.rows) {
+      const restored = Object.fromEntries(wire.observations.columns.map((key, i) => [key, row[i] ?? null]));
+      const original = packed.packet.evidence.find((e) => e.id === restored.id)!;
+      for (const key of wire.observations.columns) expect(restored[key]).toEqual((original as Record<string, unknown>)[key] ?? null);
+    }
+    expect(wire.evidence.every((e) => e.kind !== "observation")).toBe(true);
+    expect(JSON.stringify(wire).length).toBeLessThan(JSON.stringify(packed.packet).length);
+  });
+  it("does not displace in-period comparisons with older baselines", () => {
+    const context = fixtureContext();
+    context.observations.push({ ...context.observations[2], date: "2025-03-01", value: 132 });
+    const packed = packEvidence(context, "Review 2026", [], 48000, now);
+    expect(packed.selected.some((e) => e.date === "2025-03-01")).toBe(false);
+    expect(packed.packet.comparisons.find((c) => c.test === "ALT")?.delta).toBe(-40);
+  });
+  it("reserves both dates under a tight budget, retaining unit mismatches as caveats", () => {
+    const context = fixtureContext();
+    context.reports = [];
+    context.observations[3].unit = "IU/L";
+    const packed = packEvidence(context, "Compare ALT during 2026", [], 240, now);
+    expect(packed.selected.filter((e) => e.label === "ALT")).toHaveLength(2);
+    expect(packed.packet.comparisons.find((c) => c.test === "ALT")?.caveat).toContain("Units differ");
+  });
   it("resolves calendar years and named month ranges", () => {
     expect(resolveDateScope("Review 2026", now)).toMatchObject({ from: "2026-01-01", to: "2026-12-31" });
     expect(resolveDateScope("Compare March and September 2026", now)).toMatchObject({ from: "2026-03-01", to: "2026-09-30" });

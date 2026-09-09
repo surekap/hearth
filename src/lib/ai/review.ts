@@ -35,7 +35,7 @@ export function buildReview(analysis: Analysis, evidence: Evidence[], coverage: 
       const reports = points.filter((p) => p.kind === "report" || p.kind === "diagnosis");
       if (!reports.length) continue;
       visuals.push({ type: "timeline", title: request.title, caveat: null, points: reports.map((p) => ({
-        id: p.id, label: p.label, date: p.date, value: [...new Set([p.data.summary, p.data.impression].filter(Boolean))].join(" · ") || p.label,
+        id: p.id, label: p.label, date: p.date, value: String(p.data.impression || p.data.summary || p.label),
         unit: null, referenceLow: null, referenceHigh: null,
       })) });
       continue;
@@ -63,7 +63,7 @@ export function buildReview(analysis: Analysis, evidence: Evidence[], coverage: 
   }
   for (const points of series.values()) {
     const caveat = comparisonCaveat(points);
-    if (caveat) limitations.push(caveat);
+    if (caveat && !visuals.some((v) => v.caveat === caveat && v.points.some((p) => p.label === points[0].label))) limitations.push(`${points[0].label}: ${caveat}`);
   }
   return reviewBlockSchema.parse({
     type: "review", version: 1, overviewEvidenceIds: analysis.overview.evidenceIds,

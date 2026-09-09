@@ -299,11 +299,12 @@ export function AskView({
       </Card>
 
       {insights.length > 0 && (
-        <div className="grid gap-2">
-          <div className="flex items-center justify-between">
+        <details className="rounded-lg border p-3">
+          <summary className="cursor-pointer text-sm font-semibold">Saved record highlights</summary>
+          <div className="mt-2 flex items-center justify-between">
             <p className="flex items-center gap-1.5 text-sm font-semibold">
               <Stethoscope className="size-4 text-primary" />
-              Doctor&apos;s notes on {profileName}&apos;s chart
+              AI highlights for {profileName}
             </p>
             <Button
               variant="ghost"
@@ -338,7 +339,7 @@ export function AskView({
             Generated {insights[0].createdAtLabel}{" "}
             · {insights[0].model} · updates automatically when new results are confirmed
           </p>
-        </div>
+        </details>
       )}
 
       {messages.length === 0 && (

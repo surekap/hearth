@@ -22,6 +22,7 @@ import {
   getRecentConversationHistory,
 } from "@/lib/ai/conversations";
 import { conversationTitle } from "@/lib/ai/conversation-title";
+import { progressResponse } from "@/lib/ai/progress-response";
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
@@ -38,6 +39,16 @@ const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 10;
 
 export async function POST(req: NextRequest) {
+  if (!req.headers.get("accept")?.includes("application/x-ndjson")) return answerRequest(req);
+  try {
+    // Authenticate before starting the transport; profile authorization and
+    // validation still run inside answerRequest before any records are read.
+    await requireUser();
+    return progressResponse(() => answerRequest(req));
+  } catch (error) { return handleApiError(error); }
+}
+
+async function answerRequest(req: NextRequest) {
   try {
     const { userId } = await requireUser();
     const body = bodySchema.parse(await req.json());

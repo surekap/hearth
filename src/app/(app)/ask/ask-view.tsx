@@ -1,5 +1,7 @@
 "use client";
 
+import { readAskResponse } from "@/lib/ai/progress-response";
+
 import { useRef, useState } from "react";
 import {
   ClipboardPlus,
@@ -187,15 +189,15 @@ export function AskView({
     try {
       const res = await fetch("/api/ai/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
         body: JSON.stringify({
           profileId,
           conversationId: activeConversationId ?? undefined,
           question,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
+      const { data, ok } = await readAskResponse(res);
+      if (!ok) {
         throw new Error(typeof data.error === "string" ? data.error : "Request failed");
       }
       const conversation = data.conversation as Conversation;

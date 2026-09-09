@@ -1,35 +1,69 @@
-export type SearchParams = Record<string, string | string[] | undefined>;
-export type RecordFilters = { q: string; specialty: string; from: string; to: string; sort: string };
-const specialties: Record<string, string[]> = {
-  dental: ["dental", "dentist", "dentistry", "tooth", "teeth", "periodontal", "orthodontic", "endodontic", "maxillofacial", "odontogram"],
-  eye: ["eye", "eyes", "ophthalmology", "ophthalmic", "ophthalmologist", "optometry", "optometrist", "retina", "retinal", "cornea", "corneal", "glaucoma", "cataract", "ocular", "fundus", "visual acuity"],
+export const MIN_SEARCH_LENGTH = 3;
+export const MAX_SEARCH_LENGTH = 500;
+export const SEARCH_DEBOUNCE_MS = 350;
+export const SEARCH_CACHE_MS = 30_000;
+
+export type SearchPlan = {
+  concepts: string[][];
+  exclude: string[];
+  from: string | null;
+  to: string | null;
+  order: "oldest" | "newest";
 };
-export function parseRecordFilters(params: SearchParams): RecordFilters {
-  const value = (key: string) => typeof params[key] === "string" ? params[key].trim() : "";
-  const date = (key: string) => {
-    const input = value(key);
-    return /^\d{4}-\d{2}-\d{2}$/.test(input) && !Number.isNaN(Date.parse(input)) && new Date(input).toISOString().slice(0, 10) === input ? input : "";
-  };
-  return { q: value("q"), specialty: Object.hasOwn(specialties, value("specialty")) ? value("specialty") : "", from: date("from"), to: date("to"), sort: value("sort") === "oldest" ? "oldest" : "newest" };
+export type SearchRecord = {
+  id: string;
+  title: string;
+  date: string | null;
+  dateIsFallback: boolean;
+  kind: string;
+  href: string;
+  scanHref?: string;
+};
+export type IndexedRecord = SearchRecord & { text: string };
+export type SearchResponse = {
+  results: SearchRecord[];
+  total: number;
+  mode: "interpreted" | "keywords";
+  order: "oldest" | "newest";
+};
+export function normalizeQuery(text: string) {
+  return text.trim().replace(/\s+/g, " ").toLowerCase();
 }
-function normalize(text: string) { return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim(); }
-function hasTerm(text: string, term: string) { return ` ${text} `.includes(` ${term} `); }
-export function matchesRecord(text: string, date: string | null, filters: RecordFilters) {
-  if ((filters.from || filters.to) && !date) return false;
-  if (date && ((filters.from && date < filters.from) || (filters.to && date > filters.to))) return false;
-  const normalized = normalize(text);
-  if (filters.specialty && !specialties[filters.specialty].some(term => hasTerm(normalized, term))) return false;
-  return normalize(filters.q).split(" ").filter(Boolean).every(term => {
-    const aliases = Object.hasOwn(specialties, term) ? specialties[term] : undefined;
-    return aliases ? aliases.some(alias => hasTerm(normalized, alias)) : normalized.includes(term);
-  });
+function words(text: string) {
+  return text.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
-export function compareRecordDates(a: string | null, b: string | null, sort: string) {
-  if (!a) return b ? 1 : 0;
-  if (!b) return -1;
-  return (sort === "oldest" ? 1 : -1) * a.localeCompare(b);
+function contains(text: string, term: string) {
+  const needle = words(term);
+  return needle.length > 0 && ` ${text} `.includes(` ${needle}`);
 }
-export function recordSearchHref(path: string, filters: RecordFilters) {
-  const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
-  return `${path}?${params}`;
+export function keywordPlan(query: string): SearchPlan {
+  return { concepts: words(query).split(" ").filter(Boolean).map(word => [word]), exclude: [], from: null, to: null, order: "newest" };
+}
+export function searchRecords(records: IndexedRecord[], plan: SearchPlan): SearchRecord[] {
+  return records.filter(record => {
+    if ((plan.from || plan.to) && !record.date) return false;
+    if (record.date && ((plan.from && record.date < plan.from) || (plan.to && record.date > plan.to))) return false;
+    const text = words(`${record.title} ${record.kind} ${record.text}`);
+    return plan.concepts.every(terms => terms.some(term => contains(text, term))) && !plan.exclude.some(term => contains(text, term));
+  }).sort((a, b) => {
+    if (!a.date) return b.date ? 1 : a.id.localeCompare(b.id);
+    if (!b.date) return -1;
+    return (plan.order === "oldest" ? 1 : -1) * a.date.localeCompare(b.date) || a.id.localeCompare(b.id);
+  }).map(record => ({ id: record.id, title: record.title, date: record.date, dateIsFallback: record.dateIsFallback, kind: record.kind, href: record.href, ...(record.scanHref ? { scanHref: record.scanHref } : {}) }));
+}
+
+/** Bounded, memory-only cache. Rejected requests are never cached. */
+export class SearchCache<T> {
+  private entries = new Map<string, { expires: number; value: Promise<T> }>();
+  constructor(private maxEntries: number, private ttl: number) {}
+  get(key: string, load: () => Promise<T>): Promise<T> {
+    const cached = this.entries.get(key);
+    if (cached && cached.expires > Date.now()) return cached.value;
+    this.entries.delete(key);
+    while (this.entries.size >= this.maxEntries) this.entries.delete(this.entries.keys().next().value!);
+    const entry = { expires: Date.now() + this.ttl, value: Promise.resolve().then(load) };
+    this.entries.set(key, entry);
+    void entry.value.catch(() => { if (this.entries.get(key) === entry) this.entries.delete(key); });
+    return entry.value;
+  }
 }

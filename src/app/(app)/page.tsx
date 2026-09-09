@@ -1,6 +1,3 @@
-import { RecordSearch } from "@/components/record-search";
-import { parseRecordFilters, matchesRecord, compareRecordDates, type SearchParams } from "@/lib/record-search";
-import { getRecordSearchText } from "@/lib/record-search-data";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { desc, eq, and, ne } from "drizzle-orm";
@@ -17,7 +14,6 @@ import { formatMetricValue } from "@/lib/health/series";
 
 type TimelineEvent = {
   date: Date;
-  searchText?: string;
   kind: "document" | "labs" | "report" | "manual" | "med" | "genetics";
   title: string;
   detail: string;
@@ -36,13 +32,11 @@ const TYPE_LABELS: Record<string, string> = {
   other: "Document",
 };
 
-export default async function TimelinePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const filters = parseRecordFilters(await searchParams);
+export default async function TimelinePage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const { profile } = await getActiveProfile(session.user.id);
   if (!profile) redirect("/profiles");
-  const searchText = filters.q || filters.specialty ? await getRecordSearchText(profile.id) : new Map<string, string>();
 
   const [docs, observations, reports, medEvents, geneticReports] = await Promise.all([
     db.query.documents.findMany({
@@ -50,7 +44,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
       orderBy: [desc(schema.documents.uploadedAt)],
     }),
     // Apple Health belongs in aggregated dashboards. Filtering it in SQL is
-    // important to keep wearable rows out of the searchable clinical history.
+    // important to keep wearable rows out of the clinical history.
     db
       .select({
         id: schema.observations.id,
@@ -100,7 +94,6 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
     events.push({
       date,
       kind: "document",
-      searchText: searchText.get(d.id),
       title: `${TYPE_LABELS[d.documentType]} uploaded`,
       detail: d.originalFilename,
       href: `/documents/${d.id}/review`,
@@ -154,7 +147,6 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
     events.push({
       date: list[0].observedAt,
       kind: "labs",
-      searchText: `${searchText.get(docId) ?? ""} ${list.map(o => o.typeName).join(" ")}`,
       title: `${list.length} lab values confirmed`,
       detail: list
         .slice(0, 4)
@@ -171,7 +163,6 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
     events.push({
       date: r.reportDate ? new Date(r.reportDate) : r.createdAt,
       kind: "report",
-      searchText: searchText.get(r.documentId),
       title:
         r.studyName ?? `${r.reportType === "imaging" ? "Imaging" : "Clinical"} report`,
       detail: r.impression ?? r.summary ?? "",
@@ -206,7 +197,6 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
     events.push({
       date: g.reportDate ? new Date(g.reportDate) : g.createdAt,
       kind: "genetics",
-      searchText: searchText.get(g.documentId),
       title: g.reportName ?? "Genetic report confirmed",
       detail: [g.vendor, g.testKind].filter(Boolean).join(" · "),
       href: "/genetics",
@@ -214,12 +204,11 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
     });
   }
 
-  const filteredEvents = events.filter(e => matchesRecord(`${e.title} ${e.detail} ${e.searchText ?? ""}`, e.date.toISOString().slice(0, 10), filters));
-  filteredEvents.sort((a, b) => compareRecordDates(a.date.toISOString(), b.date.toISOString(), filters.sort));
+  events.sort((a, b) => b.date.getTime() - a.date.getTime());
 
   // Group by month
   const groups = new Map<string, TimelineEvent[]>();
-  for (const e of filteredEvents) {
+  for (const e of events) {
     const key = e.date.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
     const list = groups.get(key) ?? [];
     list.push(e);
@@ -281,8 +270,6 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
           </div>
         </div>
       </section>
-
-      <RecordSearch filters={filters} path="/" count={filteredEvents.length} />
 
       {events.length === 0 ? (
         <Card>

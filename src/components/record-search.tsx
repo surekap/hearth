@@ -1,32 +1,86 @@
-import Link from "next/link";
-import { Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { recordSearchHref, type RecordFilters } from "@/lib/record-search";
+"use client";
 
-export function RecordSearch({ filters, path, count }: { filters: RecordFilters; path: string; count: number }) {
-  const selectClass = "h-9 w-full rounded-lg border border-input bg-background px-3 text-sm";
-  return <section className="grid gap-3 rounded-xl border bg-card p-4" aria-label="Search health records">
-    <form action={path} className="grid gap-3" key={JSON.stringify(filters)}>
-      <label className="grid gap-1 text-sm font-medium">Search records
-        <Input type="search" name="q" defaultValue={filters.q} placeholder="Dental, eye, report name, doctor, or finding…" />
-      </label>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="grid gap-1 text-xs text-muted-foreground">Specialty
-          <select className={selectClass} name="specialty" defaultValue={filters.specialty}><option value="">All specialties</option><option value="dental">Dental</option><option value="eye">Eye</option></select>
-        </label>
-        <label className="grid gap-1 text-xs text-muted-foreground">From date<Input type="date" name="from" defaultValue={filters.from} /></label>
-        <label className="grid gap-1 text-xs text-muted-foreground">To date<Input type="date" name="to" defaultValue={filters.to} /></label>
-        <label className="grid gap-1 text-xs text-muted-foreground">Order
-          <select className={selectClass} name="sort" defaultValue={filters.sort}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select>
-        </label>
+import { useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { FileText, LoaderCircle, Search, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { MIN_SEARCH_LENGTH, MAX_SEARCH_LENGTH, SEARCH_DEBOUNCE_MS, SEARCH_CACHE_MS, normalizeQuery, type SearchResponse } from "@/lib/record-search";
+
+type Cached = { expires: number; response: SearchResponse };
+
+export function RecordSearch({ profileId, children }: { profileId: string; children: ReactNode }) {
+  const pathname = usePathname();
+  const [cache] = useState(() => new Map<string, Cached>());
+  // Navigating to a result restores the page; the profile-keyed memory cache survives navigation.
+  return <SearchSession key={pathname} profileId={profileId} cache={cache}>{children}</SearchSession>;
+}
+
+function SearchSession({ profileId, cache, children }: { profileId: string; cache: Map<string, Cached>; children: ReactNode }) {
+  const [input, setInput] = useState({ value: "" });
+  const [answer, setAnswer] = useState<{ input: typeof input; data?: SearchResponse; error?: string } | null>(null);
+  const query = input.value.trim();
+  const searching = query.length >= MIN_SEARCH_LENGTH;
+  const current = answer?.input === input ? answer : null;
+  const loading = searching && !current;
+
+  useEffect(() => {
+    if (!searching) return;
+    const controller = new AbortController();
+    const key = normalizeQuery(query);
+    const timer = setTimeout(async () => {
+      try {
+        const cached = cache.get(key);
+        if (cached && cached.expires > Date.now()) { setAnswer({ input, data: cached.response }); return; }
+        const response = await fetch("/api/records/search", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, profileId }), signal: controller.signal, cache: "no-store",
+        });
+        if (!response.ok) throw new Error(response.status === 401 ? "Your session expired. Sign in again to search." : "Search is unavailable. Please try again.");
+        const data: SearchResponse = await response.json();
+        if (controller.signal.aborted) return;
+        cache.delete(key);
+        while (cache.size >= 30) cache.delete(cache.keys().next().value!);
+        cache.set(key, { response: data, expires: Date.now() + (data.mode === "keywords" ? 5000 : SEARCH_CACHE_MS) });
+        setAnswer({ input, data });
+      } catch (error) {
+        if (!controller.signal.aborted) setAnswer({ input, error: error instanceof Error ? error.message : "Search is unavailable. Please try again." });
+      }
+    }, SEARCH_DEBOUNCE_MS);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [input, query, searching, profileId, cache]);
+
+  const results = current?.data?.results ?? [];
+  const groups = Map.groupBy(results, result => result.date?.slice(0, 7) ?? "Undated");
+  return <>
+    <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-3">
+      <div role="search" className="relative">
+        <Search aria-hidden="true" className="pointer-events-none absolute top-3 left-3 size-4 text-muted-foreground" />
+        <Input aria-label="Search health records" aria-describedby="record-search-status" type="search" value={input.value} maxLength={MAX_SEARCH_LENGTH}
+          placeholder="Search your health records…" className="h-10 pr-10 pl-10 [&::-webkit-search-cancel-button]:hidden"
+          onChange={event => setInput({ value: event.target.value })} onKeyDown={event => { if (event.key === "Escape") setInput({ value: "" }); }} />
+        {input.value && <button type="button" aria-label="Clear search" className="absolute top-0 right-0 flex size-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setInput({ value: "" })}><X className="size-4" /></button>}
       </div>
-      <div className="flex flex-wrap items-center gap-2"><Button type="submit"><Search className="size-4" />Search</Button><Button asChild variant="ghost"><Link href={path}>Clear filters</Link></Button></div>
-    </form>
-    <div className="flex flex-wrap items-center gap-3 text-sm"><p role="status" className="text-muted-foreground">{count} {count === 1 ? "result" : "results"}</p>
-      <nav aria-label="Search in other views" className="flex flex-wrap gap-3">{[["/", "Timeline"], ["/documents", "Documents"], ["/images", "Scans"]].map(([href, label]) => <Link key={href} aria-current={path === href ? "page" : undefined} className="text-primary underline underline-offset-4" href={recordSearchHref(href, filters)}>{label}</Link>)}</nav>
+      <div id="record-search-status" role="status" aria-live="polite" className="mt-1 text-xs text-muted-foreground">
+        {input.value && !searching ? "Type at least 3 characters to search." : loading ? <span className="inline-flex items-center gap-1.5"><LoaderCircle className="size-3 animate-spin" />Searching…</span> : current?.data ? `${current.data.total} ${current.data.total === 1 ? "record" : "records"} · ${current.data.order === "oldest" ? "Oldest" : "Newest"} first` : null}
+      </div>
     </div>
-    <p className="text-xs text-muted-foreground">Searches filenames and extracted report text. Dates use the report date where available; documents without one use their upload date.</p>
-    {filters.from && filters.to && filters.from > filters.to ? <p role="alert" className="text-sm text-destructive">From date must be on or before To date.</p> : count === 0 ? <p className="text-sm">No matching records. Try another term or clear the filters.</p> : null}
-  </section>;
+    <main className="mx-auto min-w-0 w-full max-w-6xl px-4 py-5 pb-8 sm:py-6">
+      {!searching ? children : <section aria-label="Search results" aria-busy={loading} className="grid gap-5">
+        {current?.error && <p role="alert" className="text-sm text-destructive">{current.error} <button className="underline" onClick={() => setInput({ value: input.value })}>Retry</button></p>}
+        {current?.data?.mode === "keywords" && <p className="text-sm text-muted-foreground">Smart search is temporarily unavailable. Showing literal keyword matches.</p>}
+        {current?.data && !results.length && <p className="text-sm text-muted-foreground">No matching records. Try a different description.</p>}
+        {[...groups].map(([month, records]) => <div key={month}>
+          <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{month === "Undated" ? month : new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" })}</h2>
+          <ol className="grid gap-2 border-l-2 border-primary/15 pl-4">{records.map(record => <li key={record.id} className="rounded-xl border bg-card p-4">
+            <Link href={record.href} onClick={() => setInput({ value: "" })} className="flex min-w-0 items-start gap-3 rounded-md focus-visible:ring-2 focus-visible:ring-ring">
+              <FileText aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div className="min-w-0"><p className="break-words text-sm font-medium">{record.title}</p><p className="mt-1 text-xs text-muted-foreground">{record.date ?? "Undated"}{record.dateIsFallback ? " (uploaded)" : ""} · {record.kind}</p></div>
+            </Link>
+            {record.scanHref && <Link href={record.scanHref} target="_blank" className="mt-2 inline-block text-xs text-primary underline underline-offset-4">Open scan image</Link>}
+          </li>)}</ol>
+        </div>)}
+      </section>}
+    </main>
+  </>;
 }

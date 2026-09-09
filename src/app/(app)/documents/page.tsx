@@ -1,6 +1,3 @@
-import { RecordSearch } from "@/components/record-search";
-import { parseRecordFilters, matchesRecord, compareRecordDates, type SearchParams } from "@/lib/record-search";
-import { getRecordSearchText } from "@/lib/record-search-data";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { desc, eq, inArray } from "drizzle-orm";
@@ -44,20 +41,16 @@ function extractionBadge(status: string, jobStatus?: string) {
   }
 }
 
-export default async function DocumentsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const filters = parseRecordFilters(await searchParams);
+export default async function DocumentsPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const { profile } = await getActiveProfile(session.user.id);
   if (!profile) redirect("/profiles");
-  const searchText = filters.q || filters.specialty ? await getRecordSearchText(profile.id) : new Map<string, string>();
 
   const docs = await db.query.documents.findMany({
     where: eq(schema.documents.profileId, profile.id),
     orderBy: [desc(schema.documents.uploadedAt)],
   });
-  const filteredDocs = docs.filter(d => matchesRecord(searchText.get(d.id) ?? `${d.originalFilename} ${d.documentType} ${d.source}`, d.documentDate ?? d.uploadedAt.toISOString().slice(0, 10), filters))
-    .sort((a, b) => compareRecordDates(a.documentDate ?? a.uploadedAt.toISOString().slice(0, 10), b.documentDate ?? b.uploadedAt.toISOString().slice(0, 10), filters.sort));
   const jobs =
     docs.length > 0
       ? await db.query.extractionJobs.findMany({
@@ -107,8 +100,6 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
-      <RecordSearch filters={filters} path="/documents" count={filteredDocs.length} />
-
       {docs.length === 0 ? (
         <Card>
           <CardContent>
@@ -125,7 +116,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         </Card>
       ) : (
         <div className="grid gap-2">
-          {filteredDocs.map((d) => (
+          {docs.map((d) => (
             <Link key={d.id} href={`/documents/${d.id}/review`}>
               <Card className="interactive-card py-3">
                 <CardContent className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">

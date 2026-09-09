@@ -1,6 +1,3 @@
-import { RecordSearch } from "@/components/record-search";
-import { parseRecordFilters, matchesRecord, compareRecordDates, type SearchParams } from "@/lib/record-search";
-import { getRecordSearchText } from "@/lib/record-search-data";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -13,13 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/mascot";
 
-export default async function ClinicalImagesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const filters = parseRecordFilters(await searchParams);
+export default async function ClinicalImagesPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const { profile } = await getActiveProfile(session.user.id);
   if (!profile) redirect("/profiles");
-  const searchText = filters.q || filters.specialty ? await getRecordSearchText(profile.id) : new Map<string, string>();
 
   const assets = await db.query.clinicalImages.findMany({
     where: and(
@@ -28,10 +23,8 @@ export default async function ClinicalImagesPage({ searchParams }: { searchParam
     ),
     orderBy: [asc(schema.clinicalImages.reportDate), asc(schema.clinicalImages.sourcePage)],
   });
-  const filteredAssets = assets.filter(a => matchesRecord(`${searchText.get(a.documentId) ?? ""} ${a.studyName ?? ""} ${a.bodyPart ?? ""} ${a.modality ?? ""} ${a.pageLabel ?? ""} ${a.assetKind} ${a.laterality ?? ""}`, a.reportDate, filters))
-    .sort((a, b) => compareRecordDates(a.reportDate, b.reportDate, filters.sort) || (a.sourcePage ?? 0) - (b.sourcePage ?? 0));
   const groups = new Map<string, typeof assets>();
-  for (const asset of filteredAssets) {
+  for (const asset of assets) {
     const rows = groups.get(asset.comparisonKey) ?? [];
     rows.push(asset);
     groups.set(asset.comparisonKey, rows);
@@ -49,8 +42,6 @@ export default async function ClinicalImagesPage({ searchParams }: { searchParam
           them side by side while retaining labels, scale, and acquisition context.
         </p>
       </div>
-
-      <RecordSearch filters={filters} path="/images" count={filteredAssets.length} />
 
       {assets.length === 0 ? (
         <Card>

@@ -1,3 +1,4 @@
+import { RecordSearch } from "@/components/record-search";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
@@ -88,7 +89,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <MainNav />
         </div>
       </header>
-      <main className="mx-auto min-w-0 w-full max-w-6xl px-4 py-5 pb-8 sm:py-6">{children}</main>
+      {profile ? <RecordSearch key={`${session.user.id}:${profile.id}`} profileId={profile.id}>{children}</RecordSearch> : <main className="mx-auto w-full max-w-6xl px-4 py-6">{children}</main>}
       <Suspense fallback={null}>
         <StreamedCommandMenu profileId={profile?.id ?? null} />
       </Suspense>

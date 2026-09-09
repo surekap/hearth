@@ -17,7 +17,7 @@ import {
   submitExternalExtraction,
   uploadLocalDocument,
 } from "@/lib/mcp/ingest";
-import { getAccessibleProfiles } from "@/lib/profile-access";
+import { registerHealthTools } from "@/lib/mcp/health-server";
 
 function jsonText(value: Record<string, unknown>) {
   return {
@@ -27,40 +27,11 @@ function jsonText(value: Record<string, unknown>) {
 }
 
 const server = new McpServer({
-  name: "hearth-prescription-ingest",
-  version: "0.1.0",
+  name: "hearth-health",
+  version: "0.2.0",
 });
 
-server.registerTool(
-  "hearth_list_profiles",
-  {
-    title: "List Hearth Profiles",
-    description:
-      "List profiles accessible to the HEARTH_API_TOKEN user. Use a profile id when uploading prescription files.",
-    outputSchema: {
-      profiles: z.array(
-        z.object({
-          id: z.string(),
-          displayName: z.string(),
-          relationship: z.string(),
-          dateOfBirth: z.string().nullable(),
-        })
-      ),
-    },
-  },
-  async () => {
-    const user = await requireMcpUser();
-    const profiles = await getAccessibleProfiles(user.id);
-    return jsonText({
-      profiles: profiles.map((profile) => ({
-        id: profile.id,
-        displayName: profile.displayName,
-        relationship: profile.relationship,
-        dateOfBirth: profile.dateOfBirth,
-      })),
-    });
-  }
-);
+registerHealthTools(server, async () => (await requireMcpUser()).id);
 
 server.registerTool(
   "hearth_scan_ingest_folder",
@@ -91,7 +62,10 @@ server.registerTool(
       filePath: z.string().describe("Absolute or relative file path within HEARTH_INGEST_ROOTS."),
     },
   },
-  async ({ filePath }) => jsonText(await readLocalFilePayload(filePath))
+  async ({ filePath }) => {
+    await requireMcpUser();
+    return jsonText(await readLocalFilePayload(filePath));
+  }
 );
 
 server.registerTool(
@@ -215,7 +189,7 @@ server.registerTool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Hearth prescription ingest MCP server running on stdio.");
+  console.error("Hearth health MCP server running on stdio.");
 }
 
 main().catch((error) => {

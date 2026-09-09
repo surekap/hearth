@@ -212,10 +212,12 @@ shared file to `/api/documents/upload` with `Authorization: Bearer <token>` and 
 `profileId` form field. Session-less uploads are validated, encrypted, deduped and
 profile-isolated exactly like PWA uploads.
 
-## MCP prescription ingest
+## MCP health questions and prescription ingest
+
+Use the MCP to answer health questions across accessible profiles and inspect family-history evidence. Read-only tools are available through local stdio and authenticated Streamable HTTP at `/api/mcp`, with configurable OAuth for remote clients. See [setup and tool documentation](docs/mcp-health.md).
 
 For local folders of old prescription PDFs/scans, run the stdio MCP server with
-`npm run mcp:hearth`. It lets an MCP client scan allowed folders, upload encrypted
+`pnpm --silent mcp:hearth`. It lets an MCP client scan allowed folders, upload encrypted
 documents, read file payloads for OCR/vision extraction, and submit structured draft
 items back into the normal Hearth review workflow. See
 `docs/mcp-prescription-ingest.md`.

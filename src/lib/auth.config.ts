@@ -15,9 +15,12 @@ export const authConfig = {
         if (isLoggedIn) return Response.redirect(new URL("/", nextUrl));
         return true;
       }
-      // The upload endpoint accepts session OR a bearer token (iOS Shortcut);
-      // it enforces auth itself, so let it through the middleware.
-      if (nextUrl.pathname === "/api/documents/upload") return true;
+      // Upload and MCP authenticate themselves. OAuth resource metadata is public.
+      if ([
+        "/api/documents/upload",
+        "/api/mcp",
+        "/.well-known/oauth-protected-resource/api/mcp",
+      ].includes(nextUrl.pathname)) return true;
       return isLoggedIn;
     },
     jwt({ token, user }) {

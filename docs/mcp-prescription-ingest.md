@@ -4,7 +4,7 @@ This MCP lets Claude, ChatGPT or another MCP client help process a local folder 
 
 ## Design
 
-The server is intentionally local and stdio-based. It does not expose a public HTTP endpoint and it does not confirm clinical data automatically.
+Ingestion remains local and stdio-based and does not confirm clinical data automatically. Read-only health Q&A tools are also available over authenticated HTTP; see [Hearth health MCP](mcp-health.md).
 
 Flow:
 
@@ -31,7 +31,7 @@ DOCUMENT_ENCRYPTION_KEY=...
 ## Run
 
 ```bash
-npm run mcp:hearth
+pnpm --silent mcp:hearth
 ```
 
 Claude Desktop-style config:
@@ -40,7 +40,7 @@ Claude Desktop-style config:
 {
   "mcpServers": {
     "hearth": {
-      "command": "npm",
+      "command": "pnpm",
       "args": ["--silent", "run", "mcp:hearth"],
       "cwd": "/Users/prateeksureka/Sites/hearth",
       "env": {

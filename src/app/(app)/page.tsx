@@ -1,3 +1,6 @@
+import { RecordSearch } from "@/components/record-search";
+import { parseRecordFilters, matchesRecord, compareRecordDates, type SearchParams } from "@/lib/record-search";
+import { getRecordSearchText } from "@/lib/record-search-data";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { desc, eq, and, ne } from "drizzle-orm";
@@ -14,6 +17,7 @@ import { formatMetricValue } from "@/lib/health/series";
 
 type TimelineEvent = {
   date: Date;
+  searchText?: string;
   kind: "document" | "labs" | "report" | "manual" | "med" | "genetics";
   title: string;
   detail: string;
@@ -32,21 +36,21 @@ const TYPE_LABELS: Record<string, string> = {
   other: "Document",
 };
 
-export default async function TimelinePage() {
+export default async function TimelinePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const filters = parseRecordFilters(await searchParams);
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const { profile } = await getActiveProfile(session.user.id);
   if (!profile) redirect("/profiles");
+  const searchText = filters.q || filters.specialty ? await getRecordSearchText(profile.id) : new Map<string, string>();
 
   const [docs, observations, reports, medEvents, geneticReports] = await Promise.all([
     db.query.documents.findMany({
       where: eq(schema.documents.profileId, profile.id),
       orderBy: [desc(schema.documents.uploadedAt)],
-      limit: 200,
     }),
     // Apple Health belongs in aggregated dashboards. Filtering it in SQL is
-    // important: otherwise the 1,000-row cap can hide older clinical records
-    // before the application has a chance to discard wearable rows.
+    // important to keep wearable rows out of the searchable clinical history.
     db
       .select({
         id: schema.observations.id,
@@ -73,22 +77,18 @@ export default async function TimelinePage() {
           ne(schema.observations.source, "apple_health")
         )
       )
-      .orderBy(desc(schema.observations.observedAt))
-      .limit(1000),
+      .orderBy(desc(schema.observations.observedAt)),
     db.query.clinicalReports.findMany({
       where: eq(schema.clinicalReports.profileId, profile.id),
       orderBy: [desc(schema.clinicalReports.createdAt)],
-      limit: 100,
     }),
     db.query.medicationEvents.findMany({
       where: eq(schema.medicationEvents.profileId, profile.id),
       orderBy: [desc(schema.medicationEvents.eventTime)],
-      limit: 200,
     }),
     db.query.geneticReports.findMany({
       where: eq(schema.geneticReports.profileId, profile.id),
       orderBy: [desc(schema.geneticReports.createdAt)],
-      limit: 50,
     }),
   ]);
 
@@ -100,6 +100,7 @@ export default async function TimelinePage() {
     events.push({
       date,
       kind: "document",
+      searchText: searchText.get(d.id),
       title: `${TYPE_LABELS[d.documentType]} uploaded`,
       detail: d.originalFilename,
       href: `/documents/${d.id}/review`,
@@ -153,6 +154,7 @@ export default async function TimelinePage() {
     events.push({
       date: list[0].observedAt,
       kind: "labs",
+      searchText: `${searchText.get(docId) ?? ""} ${list.map(o => o.typeName).join(" ")}`,
       title: `${list.length} lab values confirmed`,
       detail: list
         .slice(0, 4)
@@ -169,6 +171,7 @@ export default async function TimelinePage() {
     events.push({
       date: r.reportDate ? new Date(r.reportDate) : r.createdAt,
       kind: "report",
+      searchText: searchText.get(r.documentId),
       title:
         r.studyName ?? `${r.reportType === "imaging" ? "Imaging" : "Clinical"} report`,
       detail: r.impression ?? r.summary ?? "",
@@ -203,6 +206,7 @@ export default async function TimelinePage() {
     events.push({
       date: g.reportDate ? new Date(g.reportDate) : g.createdAt,
       kind: "genetics",
+      searchText: searchText.get(g.documentId),
       title: g.reportName ?? "Genetic report confirmed",
       detail: [g.vendor, g.testKind].filter(Boolean).join(" · "),
       href: "/genetics",
@@ -210,11 +214,12 @@ export default async function TimelinePage() {
     });
   }
 
-  events.sort((a, b) => b.date.getTime() - a.date.getTime());
+  const filteredEvents = events.filter(e => matchesRecord(`${e.title} ${e.detail} ${e.searchText ?? ""}`, e.date.toISOString().slice(0, 10), filters));
+  filteredEvents.sort((a, b) => compareRecordDates(a.date.toISOString(), b.date.toISOString(), filters.sort));
 
   // Group by month
   const groups = new Map<string, TimelineEvent[]>();
-  for (const e of events) {
+  for (const e of filteredEvents) {
     const key = e.date.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
     const list = groups.get(key) ?? [];
     list.push(e);
@@ -276,6 +281,8 @@ export default async function TimelinePage() {
           </div>
         </div>
       </section>
+
+      <RecordSearch filters={filters} path="/" count={filteredEvents.length} />
 
       {events.length === 0 ? (
         <Card>
